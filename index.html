@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Scoreboard — live scores & schedules</title>
+  <meta name="description" content="Live scores and schedules for NHL, NBA, NFL, MLB and soccer. Installable, offline-tolerant PWA." />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="color-scheme" content="dark light" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Scoreboard" />
+
+  <!-- speed up first ESPN call -->
+  <link rel="preconnect" href="https://site.api.espn.com" crossorigin />
+  <link rel="dns-prefetch" href="https://a.espncdn.com" />
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- set the shell background immediately so there's never a white flash -->
+  <style>:root{color-scheme:dark}html[data-theme="light"]{color-scheme:light}</style>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+
+  <header id="app-header" class="app-header"><!-- rendered by app.js --></header>
+  <div id="status-bar" class="status-bar" style="display:none"></div>
+
+  <main id="content" class="content" tabindex="-1">
+    <!-- views rendered by app.js -->
+  </main>
+
+  <footer class="app-footer">
+    <span>Data: ESPN public API · badges: TheSportsDB · not affiliated with either.</span>
+  </footer>
+
+  <noscript>
+    <p style="padding:2rem;text-align:center">This app needs JavaScript enabled.</p>
+  </noscript>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
