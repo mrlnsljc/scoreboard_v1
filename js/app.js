@@ -8,7 +8,11 @@ import { fetchScoreboard } from './data/espn.js';
 import { enrichMissingLogos } from './data/logos.js';
 import { clearResponseCache } from './data/http.js';
 import { buildTeamIndex } from './data/teams.js';
+import { fetchGolfState, fetchMajorLeaderboard } from './data/golf.js';
+import { fetchStandings } from './data/standings.js';
 import { openSearch } from './ui/search.js';
+import { buildGolfView } from './ui/golf.js';
+import { buildStandingsView } from './ui/standings.js';
 import {
   loadSettings, getSettings, updateSettings,
 } from './store/settings.js';
@@ -32,6 +36,11 @@ const state = {
   refreshTimer: null,    // live auto-refresh handle
   installPrompt: null,   // captured beforeinstallprompt event
   viewDate: new Date(),  // the day shown in the Today/Scores view (steppable)
+  // golf majors view
+  golf: { majors: [], selectedLabel: null, leaderboards: new Map(), loading: false, loadingBoard: false, error: null },
+  golfTimer: null,
+  // standings view
+  standings: { selectedId: null, result: null, loading: false, error: null },
 };
 
 const isViewingToday = () => isSameLocalDay(state.viewDate, new Date());
@@ -163,6 +172,141 @@ function scheduleLiveRefresh() {
   }, APP_CONFIG.liveRefreshMs);
 }
 
+// ---- golf majors ------------------------------------------------------------
+async function loadGolf(force = false) {
+  const g = state.golf;
+  g.loading = g.majors.length === 0; // skeleton only on first load
+  g.error = null;
+  if (getSettings().view === 'golf') render();
+  try {
+    const st = await fetchGolfState();
+    g.majors = st.majors;
+    if (!g.selectedLabel || force) {
+      // default selection: the live major, else the most recent completed one
+      const live = st.majors.find((m) => m.status === 'live');
+      const finals = st.majors.filter((m) => m.status === 'final');
+      g.selectedLabel = (live || finals[finals.length - 1] || st.majors[0] || {}).label || null;
+    }
+    // the scoreboard's active event already carries the live major's board
+    const sel = g.majors.find((m) => m.label === g.selectedLabel);
+    if (sel && sel.isCurrent && st.currentLeaderboard) {
+      g.leaderboards.set(sel.label, { leaderboard: st.currentLeaderboard, fetchedAt: st.fetchedAt, stale: st.stale });
+    }
+    g.loading = false;
+    if (getSettings().view === 'golf') render();
+    if (g.selectedLabel && !g.leaderboards.has(g.selectedLabel)) await loadMajor(g.selectedLabel);
+    scheduleGolfRefresh();
+  } catch (e) {
+    g.loading = false; g.error = e;
+    if (getSettings().view === 'golf') render();
+  }
+}
+
+async function loadMajor(label) {
+  const g = state.golf;
+  const major = g.majors.find((m) => m.label === label);
+  if (!major) return;
+  try {
+    const r = await fetchMajorLeaderboard(major);
+    g.leaderboards.set(label, r);
+  } catch (e) {
+    g.leaderboards.set(label, { leaderboard: null, error: e });
+  }
+  if (getSettings().view === 'golf') render();
+}
+
+async function selectMajor(label) {
+  const g = state.golf;
+  if (g.selectedLabel === label) return;
+  g.selectedLabel = label;
+  g.loadingBoard = !g.leaderboards.has(label);
+  render();
+  if (g.loadingBoard) { await loadMajor(label); g.loadingBoard = false; render(); }
+  scheduleGolfRefresh();
+}
+
+// Poll the selected major only while it's live (same cadence as live scores).
+function scheduleGolfRefresh() {
+  clearTimeout(state.golfTimer);
+  state.golfTimer = null;
+  if (getSettings().view !== 'golf') return;
+  const g = state.golf;
+  const sel = g.majors.find((m) => m.label === g.selectedLabel);
+  if (!sel || sel.status !== 'live') return;
+  state.golfTimer = setTimeout(async () => {
+    if (sel.isCurrent) {
+      const st = await fetchGolfState().catch(() => null);
+      if (st && st.currentLeaderboard) g.leaderboards.set(sel.label, { leaderboard: st.currentLeaderboard, fetchedAt: st.fetchedAt, stale: st.stale });
+    } else {
+      await loadMajor(sel.label);
+    }
+    if (getSettings().view === 'golf') render();
+    scheduleGolfRefresh();
+  }, APP_CONFIG.liveRefreshMs);
+}
+
+function golfAgg() {
+  const g = state.golf;
+  const r = g.selectedLabel ? g.leaderboards.get(g.selectedLabel) : null;
+  if (!r) return null;
+  return { anyStale: !!r.stale, anyData: !!r.leaderboard, oldest: r.fetchedAt || 0, allFailed: false };
+}
+
+// ---- standings --------------------------------------------------------------
+// Every configured league supports standings (they're all ESPN team sports).
+function standingsLeagues() { return LEAGUES; }
+
+async function loadStandings(force = false) {
+  const st = state.standings;
+  if (!st.selectedId || force) {
+    // default to the first followed league that has standings, else the first one
+    const followed = followedLeagueIds();
+    st.selectedId = followed.find((id) => getLeague(id)) || standingsLeagues()[0]?.id || null;
+  }
+  await loadStandingsLeague(st.selectedId, { skeleton: true });
+}
+
+async function loadStandingsLeague(id, { skeleton = false } = {}) {
+  const st = state.standings;
+  const league = getLeague(id);
+  if (!league) return;
+  st.loading = skeleton && (!st.result || st.result.league.id !== id);
+  st.error = null;
+  if (getSettings().view === 'standings') render();
+  try {
+    st.result = await fetchStandings(league);
+  } catch (e) {
+    st.error = e; st.result = null;
+  }
+  st.loading = false;
+  if (getSettings().view === 'standings') render();
+}
+
+function selectStandingsLeague(id) {
+  state.standings.selectedId = id;
+  loadStandingsLeague(id, { skeleton: true });
+}
+
+function standingsAgg() {
+  const r = state.standings.result;
+  if (!r) return null;
+  return { anyStale: !!r.stale, anyData: !!r.groups.length, oldest: r.fetchedAt || 0, allFailed: false };
+}
+
+// ---- generic view routing (today/upcoming/golf/standings share these) -------
+function refreshCurrentView(opts = {}) {
+  const v = getSettings().view;
+  if (v === 'golf') return loadGolf();
+  if (v === 'standings') return loadStandings(true);
+  return loadView(v, opts);
+}
+function currentAgg() {
+  const v = getSettings().view;
+  if (v === 'golf') return golfAgg();
+  if (v === 'standings') return standingsAgg();
+  return aggregate(v === 'today' ? state.today : state.upcoming);
+}
+
 // ---- date stepper (browse previous/finished days & other days) --------------
 function todayDateBar() {
   const today = isViewingToday();
@@ -214,6 +358,39 @@ function render() {
 
   const content = $('#content');
   const view = s.view;
+
+  // golf has its own view shape (majors selector + leaderboard)
+  if (view === 'golf') {
+    const g = state.golf;
+    mount(content, buildGolfView({
+      majors: g.majors,
+      selectedLabel: g.selectedLabel,
+      leaderboard: g.selectedLabel ? g.leaderboards.get(g.selectedLabel)?.leaderboard : null,
+      loading: g.loading || g.loadingBoard,
+      error: g.error || (g.selectedLabel ? g.leaderboards.get(g.selectedLabel)?.error : null),
+      onSelect: selectMajor,
+      onRetry: () => loadGolf(true),
+    }));
+    renderStatusBar(s, golfAgg());
+    return;
+  }
+
+  // standings has its own view shape (league picker + tables)
+  if (view === 'standings') {
+    const st = state.standings;
+    mount(content, buildStandingsView({
+      leagues: standingsLeagues(),
+      selectedId: st.selectedId,
+      result: st.result,
+      loading: st.loading,
+      error: st.error,
+      onSelectLeague: selectStandingsLeague,
+      onRetry: () => loadStandings(true),
+    }));
+    renderStatusBar(s, standingsAgg());
+    return;
+  }
+
   const map = view === 'today' ? state.today : state.upcoming;
 
   // date bar shown above the single-day ("Today"/Scores) view only
@@ -272,6 +449,8 @@ function renderHeader(s) {
     el('nav', { class: 'tabs' }, [
       tabButton('today', 'Today', s.view),
       tabButton('upcoming', 'Upcoming', s.view),
+      tabButton('standings', 'Standings', s.view),
+      tabButton('golf', 'Golf', s.view),
     ]),
 
     el('div', { class: 'header-actions' }, [
@@ -282,7 +461,7 @@ function renderHeader(s) {
       }, ['🔍']),
       el('button', {
         class: 'btn ghost icon-btn', title: 'Refresh now', aria: { label: 'Refresh' },
-        onclick: () => loadView(s.view, { showSkeleton: false }),
+        onclick: () => refreshCurrentView({ showSkeleton: false }),
       }, ['⟳']),
       el('button', {
         class: 'btn ghost toggle' + (s.favoritesOnly ? ' on' : ''),
@@ -310,6 +489,8 @@ function tabButton(id, label, active) {
       await updateSettings({ view: id });
       render();
       // load the view if we don't have it yet (or refresh in background)
+      if (id === 'golf') { loadGolf(); return; }
+      if (id === 'standings') { loadStandings(); return; }
       const map = id === 'today' ? state.today : state.upcoming;
       loadView(id, { showSkeleton: map.size === 0 });
     },
@@ -514,13 +695,13 @@ async function boot() {
 
   // refresh on regaining focus / connectivity (cheap correctness wins)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') loadView(getSettings().view, { showSkeleton: false });
+    if (document.visibilityState === 'visible') refreshCurrentView({ showSkeleton: false });
   });
-  window.addEventListener('online', () => { render(); loadView(getSettings().view, { showSkeleton: false }); });
+  window.addEventListener('online', () => { render(); refreshCurrentView({ showSkeleton: false }); });
   window.addEventListener('offline', () => render());
 
   // keep "updated Xs ago" honest
-  setInterval(() => { if (document.visibilityState === 'visible') renderStatusBar(getSettings(), aggregate(getSettings().view === 'today' ? state.today : state.upcoming)); }, 15000);
+  setInterval(() => { if (document.visibilityState === 'visible') renderStatusBar(getSettings(), currentAgg()); }, 15000);
 
   onFavoritesChange(() => {/* re-render handled by callers */});
 

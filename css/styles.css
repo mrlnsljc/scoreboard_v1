@@ -261,6 +261,71 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 /* region select */
 .region-select { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font: inherit; width: 100%; }
 
+/* ---- golf majors ---------------------------------------------------------- */
+.major-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.major-chip {
+  appearance: none; cursor: pointer; font: inherit; text-align: left;
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 9px 14px; color: var(--text); min-width: 110px;
+}
+.major-chip:hover { border-color: var(--border-strong); }
+.major-chip.active { border-color: var(--accent); background: var(--accent-soft); }
+.major-chip.is-live { border-color: color-mix(in srgb, var(--live) 50%, var(--border)); }
+.mc-name { font-weight: 700; font-size: 14px; }
+.gchip-status { font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.gchip-status.live { color: var(--live); }
+.gchip-status.done { color: var(--accent); }
+.gchip-status.up { color: var(--muted-2); }
+
+.golf-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 2px 12px; }
+.golf-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.2px; }
+.golf-sub { font-size: 13px; color: var(--muted); font-weight: 600; }
+.golf-winner { display: flex; align-items: center; gap: 8px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.golf-winner .trophy { font-size: 18px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.lb-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.lb-table th, .lb-table td { padding: 9px 10px; text-align: left; white-space: nowrap; }
+.lb-table thead th { position: sticky; top: 0; background: var(--bg-elev); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--border); z-index: 1; }
+.lb-table tbody tr { border-top: 1px solid var(--border); }
+.lb-table tbody tr:first-child { border-top: 0; }
+.lb-table tbody tr:hover { background: var(--card-hover); }
+.lb-table tr.winner { background: var(--accent-soft); }
+.lb-table tr.winner .c-pos, .lb-table tr.winner .c-total { color: var(--accent); font-weight: 800; }
+.lb-table .c-pos { width: 48px; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+.lb-table .c-num { text-align: right; font-variant-numeric: tabular-nums; }
+.lb-table .c-total { font-weight: 800; }
+.lb-table .c-player { width: 100%; }
+.lb-table .pl-name { font-weight: 650; }
+.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; margin-right: 8px; vertical-align: middle; box-shadow: 0 0 0 1px var(--border); }
+
+@media (max-width: 680px) {
+  .lb-table .c-round { display: none; } /* hide round columns on phones; keep Pos/Player/Total(+live) */
+  .major-chip { flex: 1 1 calc(50% - 8px); min-width: 0; }
+}
+
+/* ---- standings ------------------------------------------------------------ */
+.standings-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.league-select { width: auto; min-width: 200px; }
+.std-group { font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin: 18px 2px 8px; font-weight: 700; }
+.std-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.std-table th, .std-table td { padding: 9px 10px; white-space: nowrap; text-align: left; }
+.std-table thead th { background: var(--bg-elev); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--border); }
+.std-table tbody tr { border-top: 1px solid var(--border); }
+.std-table tbody tr:first-child { border-top: 0; }
+.std-table tbody tr:hover { background: var(--card-hover); }
+.std-table tr.fav { background: var(--accent-soft); }
+.std-table tr.fav .st-name { color: var(--accent); font-weight: 750; }
+.std-table .c-rank { width: 34px; color: var(--muted-2); font-variant-numeric: tabular-nums; text-align: right; }
+.std-table .c-team { width: 100%; }
+.std-table .c-team .logo.sm { margin-right: 8px; vertical-align: middle; }
+.std-table .st-name { font-weight: 650; }
+.std-table .c-num { text-align: right; font-variant-numeric: tabular-nums; }
+.std-table thead .c-num { text-align: right; }
+@media (max-width: 680px) {
+  .std-table .st-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
+}
+
 /* ---- footer --------------------------------------------------------------- */
 .app-footer { text-align: center; color: var(--muted-2); font-size: 12px; padding: 22px 16px 28px; flex-shrink: 0; }
 
