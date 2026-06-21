@@ -51,10 +51,30 @@ function collectGroups(node, out) {
   (node.children || []).forEach((c) => collectGroups(c, out));
 }
 
-export async function fetchStandings(league) {
+export async function fetchStandings(league, season) {
   const { region, lang } = getRegion(getSettings().regionCode);
-  const url = `${STANDINGS}/${league.sport}/${league.league}/standings?region=${region}&lang=${lang}`;
-  const res = await getJSON(url, { cacheKey: `standings:${league.id}:${region}`, ttlMs: 5 * 60 * 1000 });
+  const params = new URLSearchParams({ region, lang });
+  if (season) params.set('season', String(season));
+  const url = `${STANDINGS}/${league.sport}/${league.league}/standings?${params.toString()}`;
+  // historical seasons never change -> long TTL; current season -> short.
+  const ttl = season ? 7 * 24 * 3600 * 1000 : 5 * 60 * 1000;
+  const res = await getJSON(url, { cacheKey: `standings:${league.id}:${region}:${season || 'cur'}`, ttlMs: ttl });
+
+  // available seasons + the active one (for the season dropdown)
+  const seasonsRaw = res.data?.seasons || [];
+  const seasons = seasonsRaw.map((s) => ({ year: s.year, label: s.displayName || String(s.year) }));
+  const currentSeason = res.data?.season?.year || (seasons[0] && seasons[0].year) || null;
+
+  // ESPN's "current season" pointer can be a not-yet-started season that isn't
+  // in the selectable `seasons` list (e.g. off-season 2026-27 NBA). When the
+  // caller didn't ask for a specific season, fall back to the most recent season
+  // that actually has standings and re-fetch it so the table matches the dropdown.
+  if (!season) {
+    const years = seasons.map((s) => s.year);
+    const want = years.includes(currentSeason) ? currentSeason : years[0];
+    if (want && want !== currentSeason) return fetchStandings(league, want);
+    season = want || currentSeason;
+  }
 
   const cols = columnsFor(league.sport);
   const raw = [];
@@ -78,5 +98,5 @@ export async function fetchStandings(league) {
     }),
   }));
 
-  return { league, groups, columns: cols, fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
+  return { league, groups, columns: cols, seasons, currentSeason, season: season || currentSeason, fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
 }

@@ -10,9 +10,16 @@ import { clearResponseCache } from './data/http.js';
 import { buildTeamIndex } from './data/teams.js';
 import { fetchGolfState, fetchMajorLeaderboard } from './data/golf.js';
 import { fetchStandings } from './data/standings.js';
+import { fetchLeaders } from './data/leaders.js';
+import { fetchTeamDetail } from './data/team.js';
+import { fetchPlayerDetail } from './data/player.js';
+import { fetchGameSummary } from './data/game.js';
 import { openSearch } from './ui/search.js';
 import { buildGolfView } from './ui/golf.js';
 import { buildStandingsView } from './ui/standings.js';
+import { buildTeamView } from './ui/team.js';
+import { buildPlayerView } from './ui/player.js';
+import { buildGameView } from './ui/game.js';
 import {
   loadSettings, getSettings, updateSettings,
 } from './store/settings.js';
@@ -39,8 +46,11 @@ const state = {
   // golf majors view
   golf: { majors: [], selectedLabel: null, leaderboards: new Map(), loading: false, loadingBoard: false, error: null },
   golfTimer: null,
-  // standings view
-  standings: { selectedId: null, result: null, loading: false, error: null },
+  // standings view (mode = teams | leaders)
+  standings: { selectedId: null, season: null, mode: 'teams', result: null, leaders: null, loading: false, leadersLoading: false, error: null },
+  // team/player/game drill-down (overlays the active tab when type !== null)
+  detail: { type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null },
+  detailStack: [],
 };
 
 const isViewingToday = () => isSameLocalDay(state.viewDate, new Date());
@@ -274,7 +284,8 @@ async function loadStandingsLeague(id, { skeleton = false } = {}) {
   st.error = null;
   if (getSettings().view === 'standings') render();
   try {
-    st.result = await fetchStandings(league);
+    st.result = await fetchStandings(league, st.season);
+    st.season = st.result.season; // sync to whatever season actually loaded
   } catch (e) {
     st.error = e; st.result = null;
   }
@@ -283,8 +294,90 @@ async function loadStandingsLeague(id, { skeleton = false } = {}) {
 }
 
 function selectStandingsLeague(id) {
-  state.standings.selectedId = id;
-  loadStandingsLeague(id, { skeleton: true });
+  const st = state.standings;
+  st.selectedId = id;
+  st.season = null;   // reset to current season when switching leagues
+  st.leaders = null;  // leaders are per-league
+  if (st.mode === 'leaders') loadLeaders(); else loadStandingsLeague(id, { skeleton: true });
+}
+
+function selectStandingsSeason(year) {
+  state.standings.season = year;
+  loadStandingsLeague(state.standings.selectedId, { skeleton: true });
+}
+
+function setStandingsMode(mode) {
+  const st = state.standings;
+  if (st.mode === mode) return;
+  st.mode = mode;
+  render();
+  if (mode === 'leaders' && !st.leaders) loadLeaders();
+  else if (mode === 'teams' && !st.result) loadStandingsLeague(st.selectedId, { skeleton: true });
+}
+
+async function loadLeaders() {
+  const st = state.standings;
+  const league = getLeague(st.selectedId);
+  if (!league) return;
+  st.leadersLoading = !st.leaders;
+  if (getSettings().view === 'standings') render();
+  try {
+    st.leaders = await fetchLeaders(league);
+  } catch (e) { st.leaders = null; st.error = e; }
+  st.leadersLoading = false;
+  if (getSettings().view === 'standings') render();
+}
+
+// ---- team / player / game drill-down (with a back-stack) --------------------
+// state.detail = current page; state.detailStack = pages to return to. A page
+// keeps its loaded `result` so going Back is instant (no refetch).
+const blankDetail = () => ({ type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null });
+
+function pushDetail(next) {
+  if (state.detail.type) state.detailStack.push(state.detail);
+  state.detail = next;
+  render();
+}
+function isCurrent(type, key, val) { return state.detail.type === type && state.detail[key] === val; }
+
+function openTeam(leagueId, teamId) {
+  const league = getLeague(leagueId);
+  if (!league) return;
+  pushDetail({ ...blankDetail(), type: 'team', league, teamId, loading: true });
+  fetchTeamDetail(league, teamId)
+    .then((r) => { if (isCurrent('team', 'teamId', teamId)) { state.detail.result = r; state.detail.loading = false; render(); } })
+    .catch((e) => { if (isCurrent('team', 'teamId', teamId)) { state.detail.error = e; state.detail.loading = false; render(); } });
+}
+
+function openPlayer(league, athleteId) {
+  if (!league) return;
+  pushDetail({ ...blankDetail(), type: 'player', league, athleteId, loading: true });
+  fetchPlayerDetail(league, athleteId)
+    .then((r) => { if (isCurrent('player', 'athleteId', athleteId)) { state.detail.result = r; state.detail.loading = false; render(); } })
+    .catch((e) => { if (isCurrent('player', 'athleteId', athleteId)) { state.detail.error = e; state.detail.loading = false; render(); } });
+}
+
+function openGame(game) {
+  const league = getLeague(game.leagueId);
+  if (!league) return;
+  pushDetail({ ...blankDetail(), type: 'game', league, gameId: game.id, loading: true });
+  fetchGameSummary(league, game.id)
+    .then((r) => { if (isCurrent('game', 'gameId', game.id)) { state.detail.result = r; state.detail.loading = false; render(); } })
+    .catch((e) => { if (isCurrent('game', 'gameId', game.id)) { state.detail.error = e; state.detail.loading = false; render(); } });
+}
+
+function backFromDetail() {
+  const prev = state.detailStack.pop();
+  state.detail = prev || blankDetail();
+  render();
+}
+function clearDetail() { state.detail = blankDetail(); state.detailStack = []; }
+
+async function toggleDetailTeamFav() {
+  const t = state.detail.result?.team;
+  if (!t) return;
+  await toggleTeam({ favKey: t.favKey, teamId: t.id, sport: t.sport, leagueId: t.leagueId, name: t.name, displayName: t.name, logo: t.logo, abbr: t.abbr });
+  render();
 }
 
 function standingsAgg() {
@@ -359,6 +452,43 @@ function render() {
   const content = $('#content');
   const view = s.view;
 
+  // team/player/game drill-down overlays whatever tab is active
+  if (state.detail.type === 'team') {
+    const d = state.detail;
+    mount(content, buildTeamView({
+      result: d.result, loading: d.loading, error: d.error,
+      onBack: backFromDetail,
+      onSelectPlayer: (athleteId) => openPlayer(d.league, athleteId),
+      onToggleFav: toggleDetailTeamFav,
+      isFav: d.result ? isTeamFavorite(d.result.team.favKey) : false,
+      onRetry: () => { backFromDetail(); openTeam(d.league.id, d.teamId); },
+    }));
+    renderStatusBar(s, null);
+    return;
+  }
+  if (state.detail.type === 'player') {
+    const d = state.detail;
+    mount(content, buildPlayerView({
+      result: d.result, loading: d.loading, error: d.error,
+      backLabel: state.detailStack.length ? 'Back' : 'Back',
+      onBack: backFromDetail,
+      onRetry: () => { backFromDetail(); openPlayer(d.league, d.athleteId); },
+    }));
+    renderStatusBar(s, null);
+    return;
+  }
+  if (state.detail.type === 'game') {
+    const d = state.detail;
+    mount(content, buildGameView({
+      result: d.result, loading: d.loading, error: d.error,
+      onBack: backFromDetail,
+      onSelectPlayer: (athleteId) => openPlayer(d.league, athleteId),
+      onRetry: () => { backFromDetail(); openGame({ leagueId: d.league.id, id: d.gameId }); },
+    }));
+    renderStatusBar(s, null);
+    return;
+  }
+
   // golf has its own view shape (majors selector + leaderboard)
   if (view === 'golf') {
     const g = state.golf;
@@ -381,11 +511,18 @@ function render() {
     mount(content, buildStandingsView({
       leagues: standingsLeagues(),
       selectedId: st.selectedId,
+      mode: st.mode,
       result: st.result,
+      leaders: st.leaders,
       loading: st.loading,
+      leadersLoading: st.leadersLoading,
       error: st.error,
       onSelectLeague: selectStandingsLeague,
-      onRetry: () => loadStandings(true),
+      onSelectSeason: selectStandingsSeason,
+      onSelectTeam: (teamId) => openTeam(st.selectedId, teamId),
+      onSelectPlayer: (athleteId, league) => openPlayer(league || getLeague(st.selectedId), athleteId),
+      onSetMode: setStandingsMode,
+      onRetry: () => (st.mode === 'leaders' ? loadLeaders() : loadStandings(true)),
     }));
     renderStatusBar(s, standingsAgg());
     return;
@@ -423,6 +560,7 @@ function render() {
 
   const opts = {
     onToggleTeam: onToggleTeam,
+    onOpenGame: openGame,
     favoritesOnly: s.favoritesOnly,
     hasFavorites: hasAnyFavorites(),
     dateLabel: relativeDayLabel(state.viewDate),
@@ -456,8 +594,8 @@ function renderHeader(s) {
     el('div', { class: 'header-actions' }, [
       state.installPrompt ? el('button', { class: 'btn ghost', title: 'Install app', onclick: doInstall }, ['⤓ Install']) : null,
       el('button', {
-        class: 'btn ghost icon-btn', title: 'Search teams & leagues', aria: { label: 'Search teams and leagues' },
-        onclick: () => openSearch(afterFavoritesChanged),
+        class: 'btn ghost icon-btn', title: 'Search teams, players & leagues', aria: { label: 'Search teams, players and leagues' },
+        onclick: () => openSearch(afterFavoritesChanged, openPlayerFromSearch),
       }, ['🔍']),
       el('button', {
         class: 'btn ghost icon-btn', title: 'Refresh now', aria: { label: 'Refresh' },
@@ -485,7 +623,8 @@ function tabButton(id, label, active) {
     class: 'tab' + (active === id ? ' active' : ''),
     aria: { selected: String(active === id) },
     onclick: async () => {
-      if (getSettings().view === id) return;
+      clearDetail(); // leaving any team/player/game drill-down
+      if (getSettings().view === id) { render(); return; }
       await updateSettings({ view: id });
       render();
       // load the view if we don't have it yet (or refresh in background)
@@ -533,6 +672,14 @@ async function onToggleTeam(side) {
 function afterFavoritesChanged() {
   render();
   loadView(getSettings().view, { showSkeleton: false });
+}
+
+// Map a player-search hit to a league object (a configured league when we have
+// one, else a synthesized {sport, league} good enough for the player endpoints).
+function openPlayerFromSearch(p) {
+  const known = LEAGUES.find((l) => l.sport === p.sport && l.league === p.leagueSlug) || getLeague(p.leagueSlug);
+  const league = known || { id: p.leagueSlug || p.sport, sport: p.sport, league: p.leagueSlug, name: (p.leagueSlug || p.sport || '').toUpperCase() };
+  openPlayer(league, p.athleteId);
 }
 
 async function toggleTheme() {
@@ -612,8 +759,8 @@ function openSettings() {
   // Search shortcut (also available from the header 🔍)
   const searchBlock = el('div', { class: 'setting-group' }, [
     el('button', {
-      class: 'btn search-btn', onclick: () => { overlay.remove(); openSearch(afterFavoritesChanged); },
-    }, ['🔍  Search teams & leagues']),
+      class: 'btn search-btn', onclick: () => { overlay.remove(); openSearch(afterFavoritesChanged, openPlayerFromSearch); },
+    }, ['🔍  Search teams, players & leagues']),
     el('p', { class: 'muted small' }, ['Find and favorite any team or league directly — no need to wait for it on the schedule.']),
   ]);
 

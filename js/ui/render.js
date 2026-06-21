@@ -70,11 +70,12 @@ function teamRow(side, game, onToggleTeam) {
 }
 
 // ---- game card --------------------------------------------------------------
-export function gameCard(game, { onToggleTeam, showLeague = false, pinned = false } = {}) {
+export function gameCard(game, { onToggleTeam, onOpenGame, showLeague = false, pinned = false } = {}) {
   const followed = pinned; // pinned cards are favorite-involving -> highlight
   const card = el('div', {
-    class: 'card game-card' + (game.isLive ? ' is-live' : '') + (followed ? ' pinned' : ''),
+    class: 'card game-card' + (game.isLive ? ' is-live' : '') + (followed ? ' pinned' : '') + (onOpenGame ? ' clickable' : ''),
     dataset: { gameId: game.id, leagueId: game.leagueId },
+    onclick: onOpenGame ? () => onOpenGame(game) : undefined,
   }, [
     el('div', { class: 'card-top' }, [
       showLeague ? el('span', { class: 'league-tag' }, [game.league.short]) : null,

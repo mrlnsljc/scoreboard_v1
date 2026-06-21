@@ -22,7 +22,7 @@ const leagueOrder = Object.fromEntries(LEAGUES.map((l, i) => [l.id, i]));
 // TODAY: a "Following" section (favorite-team games, pinned + highlighted) on
 // top, then one section per followed league.
 // ---------------------------------------------------------------------------
-export function buildTodayView(games, { onToggleTeam, favoritesOnly, hasFavorites, dateLabel = 'today' }) {
+export function buildTodayView(games, { onToggleTeam, onOpenGame, favoritesOnly, hasFavorites, dateLabel = 'today' }) {
   const wrap = el('div', { class: 'sections' });
   // lower-case for inline copy ("No games yesterday"), keep "Today"->"today"
   const dayWord = /^(today|yesterday|tomorrow)$/i.test(dateLabel) ? dateLabel.toLowerCase() : `on ${dateLabel}`;
@@ -38,7 +38,7 @@ export function buildTodayView(games, { onToggleTeam, favoritesOnly, hasFavorite
         : emptyState('No favorites yet', 'Use 🔍 Search (or tap the ☆ on a team) to favorite teams and leagues, then flip on “Favorites only”.'));
       return wrap;
     }
-    wrap.appendChild(section('★ Following', fav.map((g) => gameCard(g, { onToggleTeam, showLeague: true, pinned: true })), { accent: true }));
+    wrap.appendChild(section('★ Following', fav.map((g) => gameCard(g, { onToggleTeam, onOpenGame, showLeague: true, pinned: true })), { accent: true }));
     return wrap;
   }
 
@@ -48,7 +48,7 @@ export function buildTodayView(games, { onToggleTeam, favoritesOnly, hasFavorite
   }
 
   if (fav.length) {
-    wrap.appendChild(section('★ Following', fav.map((g) => gameCard(g, { onToggleTeam, showLeague: true, pinned: true })), { accent: true }));
+    wrap.appendChild(section('★ Following', fav.map((g) => gameCard(g, { onToggleTeam, onOpenGame, showLeague: true, pinned: true })), { accent: true }));
   }
 
   // Group the rest by league, in registry order.
@@ -61,7 +61,7 @@ export function buildTodayView(games, { onToggleTeam, favoritesOnly, hasFavorite
   for (const lid of leagueIds) {
     const list = byLeague.get(lid).sort(byOrder);
     const liveCount = list.filter((g) => g.isLive).length;
-    wrap.appendChild(section(list[0].league.name, list.map((g) => gameCard(g, { onToggleTeam })), {
+    wrap.appendChild(section(list[0].league.name, list.map((g) => gameCard(g, { onToggleTeam, onOpenGame })), {
       sub: liveCount ? `${liveCount} live` : '',
     }));
   }
@@ -72,7 +72,7 @@ export function buildTodayView(games, { onToggleTeam, favoritesOnly, hasFavorite
 // UPCOMING: grouped by local day; mixed leagues per day so each card shows a
 // league tag; favorite-team games are pinned to the top of each day + highlighted.
 // ---------------------------------------------------------------------------
-export function buildUpcomingView(games, { onToggleTeam, favoritesOnly, hasFavorites }) {
+export function buildUpcomingView(games, { onToggleTeam, onOpenGame, favoritesOnly, hasFavorites }) {
   const wrap = el('div', { class: 'sections' });
 
   let list = games.slice();
@@ -105,7 +105,7 @@ export function buildUpcomingView(games, { onToggleTeam, favoritesOnly, hasFavor
     });
     const label = relativeDayLabel(new Date(dayGames[0].startMs));
     const cards = dayGames.map((g) => gameCard(g, {
-      onToggleTeam, showLeague: true, pinned: hasFavoriteSide(g),
+      onToggleTeam, onOpenGame, showLeague: true, pinned: hasFavoriteSide(g),
     }));
     wrap.appendChild(section(label, cards));
   }

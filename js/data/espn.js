@@ -81,7 +81,11 @@ function normalizeSide(competitor, league) {
   if (/^[0\s\-–]+$/.test(record)) record = '';
 
   const logo = t.logo || (Array.isArray(t.logos) && t.logos[0]?.href) || '';
-  const scoreStr = competitor.score != null ? String(competitor.score) : '';
+  // score is a string on the scoreboard but an object {value, displayValue} on
+  // the team-schedule endpoint — normalize both to a plain string.
+  let scoreRaw = competitor.score;
+  if (scoreRaw && typeof scoreRaw === 'object') scoreRaw = scoreRaw.displayValue ?? scoreRaw.value;
+  const scoreStr = scoreRaw != null ? String(scoreRaw) : '';
 
   return {
     favKey: teamFavKey(league.sport, teamId), // sport-scoped so nat'l teams unify

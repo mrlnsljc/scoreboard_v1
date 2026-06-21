@@ -9,6 +9,7 @@
 import { el } from '../util/dom.js';
 import { LEAGUES, getLeague, leaguesByGroup } from '../config.js';
 import { buildTeamIndex } from '../data/teams.js';
+import { searchPlayers } from '../data/playersearch.js';
 import {
   isLeagueFollowed, toggleLeague,
   isTeamFavorite, toggleTeam,
@@ -17,13 +18,16 @@ import {
 // strip combining diacritics so "türkiye" matches "turkiye", "córdoba" etc.
 function norm(s) { return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 
-export function openSearch(onChange = () => {}) {
+export function openSearch(onChange = () => {}, onOpenPlayer = () => {}) {
   let teams = null;          // loaded team index (null = still loading)
   let query = '';
+  let players = [];          // async player-search results
+  let playersLoading = false;
+  let pSeq = 0; let pTimer = null;
 
   const input = el('input', {
-    type: 'search', class: 'search-input', placeholder: 'Search teams or leagues…',
-    autocomplete: 'off', spellcheck: 'false', aria: { label: 'Search teams or leagues' },
+    type: 'search', class: 'search-input', placeholder: 'Search teams, players or leagues…',
+    autocomplete: 'off', spellcheck: 'false', aria: { label: 'Search teams, players or leagues' },
   });
   const results = el('div', { class: 'search-results' });
 
@@ -95,6 +99,30 @@ export function openSearch(onChange = () => {}) {
     ]);
   }
 
+  function playerRow(p) {
+    return el('div', { class: 'search-row' }, [
+      el('span', { class: 'logo sm mono' }, [p.name.slice(0, 1)]),
+      el('div', { class: 'search-row-meta' }, [
+        el('span', { class: 'search-row-name' }, [p.name]),
+        el('span', { class: 'muted small' }, [[p.team, (p.leagueSlug || p.sport || '').toUpperCase()].filter(Boolean).join(' · ')]),
+      ]),
+      el('button', { class: 'btn ghost small', onclick: () => { close(); onOpenPlayer(p); } }, ['View']),
+    ]);
+  }
+
+  // debounced player search (ESPN site search)
+  function schedulePlayers() {
+    clearTimeout(pTimer);
+    const q = query.trim();
+    if (q.length < 2) { players = []; playersLoading = false; return; }
+    playersLoading = true;
+    pTimer = setTimeout(async () => {
+      const seq = ++pSeq;
+      const res = await searchPlayers(q);
+      if (seq === pSeq) { players = res; playersLoading = false; render(); }
+    }, 250);
+  }
+
   function sectionLabel(text) { return el('div', { class: 'search-section' }, [text]); }
 
   function render() {
@@ -122,30 +150,38 @@ export function openSearch(onChange = () => {}) {
     }
 
     // --- matching teams ---
+    const scored = [];
     if (teams === null) {
       results.appendChild(el('div', { class: 'muted small search-hint' }, ['Loading teams…']));
-      return;
+    } else {
+      for (const t of teams) {
+        const hay = norm(`${t.displayName} ${t.name} ${t.abbr}`);
+        const idx = hay.indexOf(q);
+        if (idx === -1) continue;
+        const rank = norm(t.displayName).startsWith(q) ? 0 : (norm(t.displayName).includes(q) ? 1 : 2);
+        scored.push({ t, key: rank * 1000 + idx });
+      }
+      scored.sort((a, b) => a.key - b.key || a.t.displayName.localeCompare(b.t.displayName));
+      if (scored.length) {
+        results.appendChild(sectionLabel(`Teams (${scored.length})`));
+        scored.slice(0, 40).forEach(({ t }) => results.appendChild(teamRow(t)));
+      }
     }
-    const scored = [];
-    for (const t of teams) {
-      const hay = norm(`${t.displayName} ${t.name} ${t.abbr}`);
-      const idx = hay.indexOf(q);
-      if (idx === -1) continue;
-      // rank: prefix match on display name first, then earliest match position
-      const rank = norm(t.displayName).startsWith(q) ? 0 : (norm(t.displayName).includes(q) ? 1 : 2);
-      scored.push({ t, key: rank * 1000 + idx });
-    }
-    scored.sort((a, b) => a.key - b.key || a.t.displayName.localeCompare(b.t.displayName));
 
-    if (scored.length) {
-      results.appendChild(sectionLabel(`Teams (${scored.length})`));
-      scored.slice(0, 60).forEach(({ t }) => results.appendChild(teamRow(t)));
-    } else if (!lgMatches.length) {
-      results.appendChild(el('div', { class: 'empty-msg muted' }, [`No teams or leagues match “${query.trim()}”.`]));
+    // --- players (async via ESPN site search) ---
+    if (playersLoading) {
+      results.appendChild(el('div', { class: 'muted small search-hint' }, ['Searching players…']));
+    } else if (players.length) {
+      results.appendChild(sectionLabel(`Players (${players.length})`));
+      players.forEach((p) => results.appendChild(playerRow(p)));
+    }
+
+    if (teams !== null && !lgMatches.length && !scored.length && !players.length && !playersLoading) {
+      results.appendChild(el('div', { class: 'empty-msg muted' }, [`Nothing matches “${query.trim()}”.`]));
     }
   }
 
-  input.addEventListener('input', () => { query = input.value; render(); });
+  input.addEventListener('input', () => { query = input.value; render(); schedulePlayers(); });
   document.addEventListener('keydown', onKey);
 
   document.body.appendChild(overlay);
