@@ -84,19 +84,29 @@ export async function fetchStandings(league, season) {
     name: g.name,
     rows: g.entries.map((e, i) => {
       const t = e.team || {};
-      const sm = {};
-      (e.stats || []).forEach((s) => { if (s && s.name != null) sm[s.name] = s.displayValue; });
+      const sm = {};  // displayValue by stat name
+      const sv = {};  // numeric value by stat name (for sorting)
+      (e.stats || []).forEach((s) => {
+        if (!s || s.name == null) return;
+        sm[s.name] = s.displayValue;
+        sv[s.name] = typeof s.value === 'number' ? s.value : parseFloat(String(s.displayValue).replace(/[^0-9.\-]/g, ''));
+      });
       return {
-        rank: String(i + 1), // entries arrive pre-sorted in table order
         teamId: String(t.id || ''),
         name: t.displayName || t.shortDisplayName || t.name || '',
         abbr: t.abbreviation || '',
         logo: pickLogo(t),
         favKey: teamFavKey(league.sport, String(t.id || '')),
         cells: cols.map(([k]) => (sm[k] != null && sm[k] !== '' ? sm[k] : '—')),
+        values: cols.map(([k]) => (Number.isFinite(sv[k]) ? sv[k] : NaN)),
       };
     }),
   }));
 
-  return { league, groups, columns: cols, seasons, currentSeason, season: season || currentSeason, fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
+  // default sort column per sport (so e.g. NFL shows most wins first)
+  const PRIMARY = { hockey: 'points', basketball: 'wins', football: 'wins', baseball: 'wins', soccer: 'points' };
+  let defaultSortIndex = cols.findIndex(([k]) => k === PRIMARY[league.sport]);
+  if (defaultSortIndex < 0) defaultSortIndex = 0;
+
+  return { league, groups, columns: cols, defaultSortIndex, seasons, currentSeason, season: season || currentSeason, fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
 }

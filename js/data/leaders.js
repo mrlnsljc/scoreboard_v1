@@ -34,14 +34,30 @@ async function resolveAthletes(refs) {
   return out;
 }
 
-export async function fetchLeaders(league) {
-  if (league.sport === 'soccer') return { league, categories: [], unsupported: true };
+export async function fetchLeaders(league, season, { allTime = false } = {}) {
+  // Soccer uses season-type 1; the other sports use 2. Season-scoped = that
+  // season's leaders; the no-season form returns all-time/career totals.
+  const type = league.sport === 'soccer' ? 1 : 2;
+  const seasonPath = (!allTime && season) ? `/seasons/${season}/types/${type}` : '';
+  const url = `${CORE}/${league.sport}/leagues/${league.league}${seasonPath}/leaders?lang=en&region=us`;
+  let res;
+  try {
+    res = await getJSON(url, { cacheKey: `leaders:${league.id}:${allTime ? 'all' : season || 'cur'}`, ttlMs: 6 * 3600 * 1000 });
+  } catch (e) {
+    // a season with no published leaders 404s — treat as "no leaders" (not an error)
+    return { league, categories: [], season, allTime, error: e };
+  }
 
-  const url = `${CORE}/${league.sport}/leagues/${league.league}/leaders?lang=en&region=us`;
-  const res = await getJSON(url, { cacheKey: `leaders:${league.id}`, ttlMs: 6 * 3600 * 1000 });
-
-  const cats = (res.data?.categories || []).filter((c) => (c.leaders || []).length).slice(0, MAX_CATS)
-    .map((c) => ({ name: c.displayName || c.name, abbr: c.abbreviation || '', leaders: (c.leaders || []).slice(0, TOP_N) }));
+  // de-dupe categories by display name (soccer repeats some) and cap.
+  const cats = [];
+  const seen = new Set();
+  for (const c of (res.data?.categories || [])) {
+    const name = c.displayName || c.name;
+    if (!(c.leaders || []).length || seen.has(name)) continue;
+    seen.add(name);
+    cats.push({ name, abbr: c.abbreviation || '', leaders: (c.leaders || []).slice(0, TOP_N) });
+    if (cats.length >= MAX_CATS) break;
+  }
 
   const refs = new Set();
   cats.forEach((c) => c.leaders.forEach((l) => { const r = (l.athlete?.$ref || '').replace(/^http:/, 'https:'); if (r) refs.add(r); }));
@@ -52,9 +68,15 @@ export async function fetchLeaders(league) {
     rows: c.leaders.map((l) => {
       const r = (l.athlete?.$ref || '').replace(/^http:/, 'https:');
       const a = resolved.get(r) || { id: idFromRef(r), name: '' };
-      return { value: l.displayValue, athleteId: a.id, name: a.name || 'Unknown' };
+      // ESPN's soccer displayValue is verbose ("Matches: 35, Goals: 27"); when
+      // it's bloated, prefer the clean numeric value for the category.
+      const dv = l.displayValue || '';
+      const n = l.value;
+      const value = (dv && dv.length <= 7 && !/[:,]/.test(dv)) ? dv
+        : (Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(1)) : dv);
+      return { value, athleteId: a.id, name: a.name || 'Unknown' };
     }),
   }));
 
-  return { league, categories, fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
+  return { league, categories, season, allTime, fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
 }

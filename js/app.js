@@ -8,18 +8,21 @@ import { fetchScoreboard } from './data/espn.js';
 import { enrichMissingLogos } from './data/logos.js';
 import { clearResponseCache } from './data/http.js';
 import { buildTeamIndex } from './data/teams.js';
-import { fetchGolfState, fetchMajorLeaderboard } from './data/golf.js';
+import { fetchMajorByYear, MAJOR_LABELS, MAJOR_SHORT } from './data/golf.js';
 import { fetchStandings } from './data/standings.js';
 import { fetchLeaders } from './data/leaders.js';
 import { fetchTeamDetail } from './data/team.js';
 import { fetchPlayerDetail } from './data/player.js';
 import { fetchGameSummary } from './data/game.js';
 import { openSearch } from './ui/search.js';
-import { buildGolfView } from './ui/golf.js';
 import { buildStandingsView } from './ui/standings.js';
+import { buildGolfArchive } from './ui/golf.js';
 import { buildTeamView } from './ui/team.js';
+// (golf is now part of the Standings page; the old standalone Golf tab was removed)
 import { buildPlayerView } from './ui/player.js';
 import { buildGameView } from './ui/game.js';
+import { store, setAdapter, LocalStorageAdapter } from './store/store.js';
+import { initAuth, signInGoogle, signOutUser, isConfigured as authConfigured, FirestoreAdapter } from './auth/firebase.js';
 import {
   loadSettings, getSettings, updateSettings,
 } from './store/settings.js';
@@ -43,14 +46,13 @@ const state = {
   refreshTimer: null,    // live auto-refresh handle
   installPrompt: null,   // captured beforeinstallprompt event
   viewDate: new Date(),  // the day shown in the Today/Scores view (steppable)
-  // golf majors view
-  golf: { majors: [], selectedLabel: null, leaderboards: new Map(), loading: false, loadingBoard: false, error: null },
-  golfTimer: null,
-  // standings view (mode = teams | leaders)
-  standings: { selectedId: null, season: null, mode: 'teams', result: null, leaders: null, loading: false, leadersLoading: false, error: null },
+  // standings view (mode = teams | leaders; selectedId 'golf' shows the golf archive)
+  standings: { selectedId: null, season: null, mode: 'teams', leadersAllTime: false, result: null, leaders: null, loading: false, leadersLoading: false, error: null, sortIndex: null, sortDir: 'desc' },
+  golfArchive: { years: [], byMajor: {} }, // byMajor[label] = { year, leaderboard, loading, error }
   // team/player/game drill-down (overlays the active tab when type !== null)
   detail: { type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null },
   detailStack: [],
+  user: null, // signed-in Firebase user (null = signed out / not configured)
 };
 
 const isViewingToday = () => isSameLocalDay(state.viewDate, new Date());
@@ -182,89 +184,11 @@ function scheduleLiveRefresh() {
   }, APP_CONFIG.liveRefreshMs);
 }
 
-// ---- golf majors ------------------------------------------------------------
-async function loadGolf(force = false) {
-  const g = state.golf;
-  g.loading = g.majors.length === 0; // skeleton only on first load
-  g.error = null;
-  if (getSettings().view === 'golf') render();
-  try {
-    const st = await fetchGolfState();
-    g.majors = st.majors;
-    if (!g.selectedLabel || force) {
-      // default selection: the live major, else the most recent completed one
-      const live = st.majors.find((m) => m.status === 'live');
-      const finals = st.majors.filter((m) => m.status === 'final');
-      g.selectedLabel = (live || finals[finals.length - 1] || st.majors[0] || {}).label || null;
-    }
-    // the scoreboard's active event already carries the live major's board
-    const sel = g.majors.find((m) => m.label === g.selectedLabel);
-    if (sel && sel.isCurrent && st.currentLeaderboard) {
-      g.leaderboards.set(sel.label, { leaderboard: st.currentLeaderboard, fetchedAt: st.fetchedAt, stale: st.stale });
-    }
-    g.loading = false;
-    if (getSettings().view === 'golf') render();
-    if (g.selectedLabel && !g.leaderboards.has(g.selectedLabel)) await loadMajor(g.selectedLabel);
-    scheduleGolfRefresh();
-  } catch (e) {
-    g.loading = false; g.error = e;
-    if (getSettings().view === 'golf') render();
-  }
-}
-
-async function loadMajor(label) {
-  const g = state.golf;
-  const major = g.majors.find((m) => m.label === label);
-  if (!major) return;
-  try {
-    const r = await fetchMajorLeaderboard(major);
-    g.leaderboards.set(label, r);
-  } catch (e) {
-    g.leaderboards.set(label, { leaderboard: null, error: e });
-  }
-  if (getSettings().view === 'golf') render();
-}
-
-async function selectMajor(label) {
-  const g = state.golf;
-  if (g.selectedLabel === label) return;
-  g.selectedLabel = label;
-  g.loadingBoard = !g.leaderboards.has(label);
-  render();
-  if (g.loadingBoard) { await loadMajor(label); g.loadingBoard = false; render(); }
-  scheduleGolfRefresh();
-}
-
-// Poll the selected major only while it's live (same cadence as live scores).
-function scheduleGolfRefresh() {
-  clearTimeout(state.golfTimer);
-  state.golfTimer = null;
-  if (getSettings().view !== 'golf') return;
-  const g = state.golf;
-  const sel = g.majors.find((m) => m.label === g.selectedLabel);
-  if (!sel || sel.status !== 'live') return;
-  state.golfTimer = setTimeout(async () => {
-    if (sel.isCurrent) {
-      const st = await fetchGolfState().catch(() => null);
-      if (st && st.currentLeaderboard) g.leaderboards.set(sel.label, { leaderboard: st.currentLeaderboard, fetchedAt: st.fetchedAt, stale: st.stale });
-    } else {
-      await loadMajor(sel.label);
-    }
-    if (getSettings().view === 'golf') render();
-    scheduleGolfRefresh();
-  }, APP_CONFIG.liveRefreshMs);
-}
-
-function golfAgg() {
-  const g = state.golf;
-  const r = g.selectedLabel ? g.leaderboards.get(g.selectedLabel) : null;
-  if (!r) return null;
-  return { anyStale: !!r.stale, anyData: !!r.leaderboard, oldest: r.fetchedAt || 0, allFailed: false };
-}
-
 // ---- standings --------------------------------------------------------------
-// Every configured league supports standings (they're all ESPN team sports).
-function standingsLeagues() { return LEAGUES; }
+// Every configured league supports standings (they're all ESPN team sports);
+// plus a Golf entry that shows the majors archive (major -> year).
+const GOLF_OPTION = { id: 'golf', name: '⛳ Golf — Majors' };
+function standingsLeagues() { return [...LEAGUES, GOLF_OPTION]; }
 
 async function loadStandings(force = false) {
   const st = state.standings;
@@ -296,14 +220,64 @@ async function loadStandingsLeague(id, { skeleton = false } = {}) {
 function selectStandingsLeague(id) {
   const st = state.standings;
   st.selectedId = id;
+  if (id === 'golf') { loadGolfArchive(); render(); return; }
   st.season = null;   // reset to current season when switching leagues
+  st.result = null;   // drop the previous league's team table
   st.leaders = null;  // leaders are per-league
+  st.sortIndex = null; st.sortDir = 'desc'; // back to the league's default sort
   if (st.mode === 'leaders') loadLeaders(); else loadStandingsLeague(id, { skeleton: true });
 }
 
+// ---- golf archive (under Standings): major -> year ----
+function loadGolfArchive() {
+  const ga = state.golfArchive;
+  if (!ga.years.length) {
+    const cur = new Date().getFullYear();
+    ga.years = Array.from({ length: 6 }, (_, i) => cur - i); // cur .. cur-5
+  }
+  MAJOR_LABELS.forEach((label) => {
+    if (!ga.byMajor[label]) ga.byMajor[label] = { year: ga.years[0], leaderboard: null, loading: false, error: null };
+    if (!ga.byMajor[label].leaderboard && !ga.byMajor[label].loading) loadMajorYear(label, ga.byMajor[label].year);
+  });
+}
+
+async function loadMajorYear(label, year) {
+  const ga = state.golfArchive;
+  ga.byMajor[label] = { year, leaderboard: ga.byMajor[label]?.leaderboard || null, loading: true, error: null };
+  const onGolf = () => getSettings().view === 'standings' && state.standings.selectedId === 'golf';
+  if (onGolf()) render();
+  try {
+    const r = await fetchMajorByYear(label, year);
+    ga.byMajor[label] = { year, leaderboard: r.leaderboard, loading: false, error: null };
+  } catch (e) {
+    ga.byMajor[label] = { year, leaderboard: null, loading: false, error: e };
+  }
+  if (onGolf()) render();
+}
+
+function selectGolfYear(label, year) { loadMajorYear(label, year); }
+
+function sortStandings(i) {
+  const st = state.standings;
+  const effective = st.sortIndex != null ? st.sortIndex : (st.result?.defaultSortIndex ?? 0);
+  st.sortDir = (i === effective) ? (st.sortDir === 'asc' ? 'desc' : 'asc') : 'desc';
+  st.sortIndex = i;
+  render();
+}
+
 function selectStandingsSeason(year) {
-  state.standings.season = year;
-  loadStandingsLeague(state.standings.selectedId, { skeleton: true });
+  const st = state.standings;
+  st.season = year;
+  if (st.mode === 'leaders') { st.leaders = null; loadLeaders(); }
+  else loadStandingsLeague(st.selectedId, { skeleton: true });
+}
+
+function setLeadersAllTime(allTime) {
+  const st = state.standings;
+  if (st.leadersAllTime === allTime) return;
+  st.leadersAllTime = allTime;
+  st.leaders = null;
+  loadLeaders();
 }
 
 function setStandingsMode(mode) {
@@ -319,10 +293,20 @@ async function loadLeaders() {
   const st = state.standings;
   const league = getLeague(st.selectedId);
   if (!league) return;
+  // leaders are season-scoped; reuse the standings season (discover it if unknown)
+  if (!st.season && league.sport !== 'soccer') {
+    try { const s = await fetchStandings(league); st.season = s.season; if (!st.result) st.result = s; } catch { /* ignore */ }
+  }
   st.leadersLoading = !st.leaders;
   if (getSettings().view === 'standings') render();
   try {
-    st.leaders = await fetchLeaders(league);
+    st.leaders = await fetchLeaders(league, st.season, { allTime: st.leadersAllTime });
+    // Some leagues publish leaders a season behind (e.g. EPL): if the selected
+    // season has none, fall back to the previous season so it's not empty.
+    if (!st.leadersAllTime && st.season && st.leaders && !st.leaders.categories.length) {
+      const alt = await fetchLeaders(league, st.season - 1, { allTime: false }).catch(() => null);
+      if (alt && alt.categories.length) { st.leaders = alt; st.season = st.season - 1; }
+    }
   } catch (e) { st.leaders = null; st.error = e; }
   st.leadersLoading = false;
   if (getSettings().view === 'standings') render();
@@ -389,13 +373,11 @@ function standingsAgg() {
 // ---- generic view routing (today/upcoming/golf/standings share these) -------
 function refreshCurrentView(opts = {}) {
   const v = getSettings().view;
-  if (v === 'golf') return loadGolf();
   if (v === 'standings') return loadStandings(true);
   return loadView(v, opts);
 }
 function currentAgg() {
   const v = getSettings().view;
-  if (v === 'golf') return golfAgg();
   if (v === 'standings') return standingsAgg();
   return aggregate(v === 'today' ? state.today : state.upcoming);
 }
@@ -489,25 +471,27 @@ function render() {
     return;
   }
 
-  // golf has its own view shape (majors selector + leaderboard)
-  if (view === 'golf') {
-    const g = state.golf;
-    mount(content, buildGolfView({
-      majors: g.majors,
-      selectedLabel: g.selectedLabel,
-      leaderboard: g.selectedLabel ? g.leaderboards.get(g.selectedLabel)?.leaderboard : null,
-      loading: g.loading || g.loadingBoard,
-      error: g.error || (g.selectedLabel ? g.leaderboards.get(g.selectedLabel)?.error : null),
-      onSelect: selectMajor,
-      onRetry: () => loadGolf(true),
-    }));
-    renderStatusBar(s, golfAgg());
-    return;
-  }
-
   // standings has its own view shape (league picker + tables)
   if (view === 'standings') {
     const st = state.standings;
+
+    // golf archive (selected via the league dropdown)
+    if (st.selectedId === 'golf') {
+      const sel = el('select', { class: 'region-select league-select', aria: { label: 'League' } },
+        standingsLeagues().map((l) => el('option', { value: l.id }, [l.name])));
+      sel.value = 'golf';
+      sel.addEventListener('change', () => selectStandingsLeague(sel.value));
+      const leagueSelect = el('div', { class: 'standings-bar' }, [el('span', { class: 'small muted' }, ['League']), sel]);
+      const ga = state.golfArchive;
+      const majors = MAJOR_LABELS.map((label) => {
+        const m = ga.byMajor[label] || {};
+        return { label, short: MAJOR_SHORT[label] || label, year: m.year || ga.years[0], leaderboard: m.leaderboard, loading: m.loading, error: m.error };
+      });
+      mount(content, buildGolfArchive({ leagueSelect, years: ga.years, majors, onSelectYear: selectGolfYear }));
+      renderStatusBar(s, null);
+      return;
+    }
+
     mount(content, buildStandingsView({
       leagues: standingsLeagues(),
       selectedId: st.selectedId,
@@ -517,11 +501,18 @@ function render() {
       loading: st.loading,
       leadersLoading: st.leadersLoading,
       error: st.error,
+      sortIndex: st.sortIndex,
+      sortDir: st.sortDir,
+      seasons: st.result?.seasons,
+      activeSeason: st.season ?? st.result?.season,
+      leadersAllTime: st.leadersAllTime,
       onSelectLeague: selectStandingsLeague,
       onSelectSeason: selectStandingsSeason,
       onSelectTeam: (teamId) => openTeam(st.selectedId, teamId),
       onSelectPlayer: (athleteId, league) => openPlayer(league || getLeague(st.selectedId), athleteId),
       onSetMode: setStandingsMode,
+      onSetAllTime: setLeadersAllTime,
+      onSort: sortStandings,
       onRetry: () => (st.mode === 'leaders' ? loadLeaders() : loadStandings(true)),
     }));
     renderStatusBar(s, standingsAgg());
@@ -588,7 +579,6 @@ function renderHeader(s) {
       tabButton('today', 'Today', s.view),
       tabButton('upcoming', 'Upcoming', s.view),
       tabButton('standings', 'Standings', s.view),
-      tabButton('golf', 'Golf', s.view),
     ]),
 
     el('div', { class: 'header-actions' }, [
@@ -628,7 +618,6 @@ function tabButton(id, label, active) {
       await updateSettings({ view: id });
       render();
       // load the view if we don't have it yet (or refresh in background)
-      if (id === 'golf') { loadGolf(); return; }
       if (id === 'standings') { loadStandings(); return; }
       const map = id === 'today' ? state.today : state.upcoming;
       loadView(id, { showSkeleton: map.size === 0 });
@@ -673,6 +662,37 @@ function afterFavoritesChanged() {
   render();
   loadView(getSettings().view, { showSkeleton: false });
 }
+
+// ---- account / cloud sync (Firebase) ---------------------------------------
+async function onUserChange(user) {
+  const wasSignedIn = !!state.user;
+  state.user = user;
+  if (user) {
+    await syncOnSignIn(user.uid);
+  } else if (wasSignedIn) {
+    setAdapter(new LocalStorageAdapter());   // signed out -> back to local
+    await loadSettings(); await loadFavorites();
+    applyTheme(getSettings().theme);
+  }
+  render();
+  refreshCurrentView({ showSkeleton: false });
+}
+
+async function syncOnSignIn(uid) {
+  setAdapter(new FirestoreAdapter(uid));
+  // fresh cloud account: seed it from whatever is currently local
+  const cloud = await store.get('followedLeagues', null);
+  if (cloud === null) {
+    await store.set('followedLeagues', followedLeagueIds());
+    await store.set('favoriteTeams', favoriteTeamList());
+    await store.set('settings', getSettings());
+  }
+  await loadSettings(); await loadFavorites();
+  applyTheme(getSettings().theme);
+}
+
+async function doSignIn() { try { await signInGoogle(); } catch (e) { console.warn('[auth] sign-in failed', e); } }
+async function doSignOut() { try { await signOutUser(); } catch (e) { console.warn('[auth] sign-out failed', e); } }
 
 // Map a player-search hit to a league object (a configured league when we have
 // one, else a synthesized {sport, league} good enough for the player endpoints).
@@ -756,6 +776,24 @@ function openSettings() {
     }, ['Save & reload data']),
   ]);
 
+  // Account / cloud sync
+  const u = state.user;
+  const accountBlock = el('div', { class: 'setting-group' }, [
+    el('h3', {}, ['Account']),
+    !authConfigured()
+      ? el('p', { class: 'muted small' }, ['“Sign in with Google” isn’t set up yet — see the README → “Sign in with Google” to turn on cross-device sync. (The app works fully without it.)'])
+      : (u
+          ? el('div', {}, [
+              el('p', { class: 'small' }, ['Signed in as ', el('strong', {}, [u.displayName || u.email || 'you'])]),
+              el('p', { class: 'muted small' }, ['Your favorites & settings sync across your devices.']),
+              el('button', { class: 'btn ghost', onclick: () => { overlay.remove(); doSignOut(); } }, ['Sign out']),
+            ])
+          : el('div', {}, [
+              el('button', { class: 'btn', onclick: () => { overlay.remove(); doSignIn(); } }, ['Sign in with Google']),
+              el('p', { class: 'muted small' }, ['Sync your favorites & settings across all your devices.']),
+            ])),
+  ]);
+
   // Search shortcut (also available from the header 🔍)
   const searchBlock = el('div', { class: 'setting-group' }, [
     el('button', {
@@ -792,6 +830,7 @@ function openSettings() {
     el('h2', {}, ['Settings']),
     el('button', { class: 'btn ghost icon-btn', onclick: () => overlay.remove(), aria: { label: 'Close' } }, ['✕']),
   ]));
+  drawer.appendChild(accountBlock);
   drawer.appendChild(searchBlock);
   drawer.appendChild(leagueGroups);
   drawer.appendChild(favBlock);
@@ -829,9 +868,13 @@ async function boot() {
     await updateSettings({ seeded: true });
   }
 
+  // Golf moved under Standings — heal any stale persisted view.
+  if (!['today', 'upcoming', 'standings'].includes(getSettings().view)) await updateSettings({ view: 'today' });
+
   applyTheme(getSettings().theme);
   render();
-  loadView(getSettings().view, { showSkeleton: true });
+  const bootView = getSettings().view;
+  if (bootView === 'standings') loadStandings(); else loadView(bootView, { showSkeleton: true });
 
   // Pre-warm the search team index in the background so the first 🔍 search is
   // instant. Deferred to idle so it doesn't compete with the initial scores
@@ -860,6 +903,9 @@ async function boot() {
   });
 
   registerServiceWorker();
+
+  // If Firebase is configured, restore any signed-in session + start syncing.
+  initAuth(onUserChange);
 }
 
 function registerServiceWorker() {

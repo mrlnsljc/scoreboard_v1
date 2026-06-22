@@ -31,10 +31,11 @@ function flag(p) {
   return img;
 }
 
-function leaderboardTable(lb) {
+function leaderboardTable(lb, limit) {
   const live = lb.isLive;
   const nRounds = Math.min(lb.maxRounds || 0, 4);
   const roundCols = Array.from({ length: nRounds }, (_, i) => `R${i + 1}`);
+  const shown = limit ? lb.players.slice(0, limit) : lb.players;
 
   const head = el('tr', {}, [
     el('th', { class: 'c-pos' }, ['Pos']),
@@ -45,7 +46,7 @@ function leaderboardTable(lb) {
     ...roundCols.map((r) => el('th', { class: 'c-num c-round' }, [r])),
   ]);
 
-  const rows = lb.players.map((p) => el('tr', { class: p.isWinner ? 'winner' : '' }, [
+  const rows = shown.map((p) => el('tr', { class: p.isWinner ? 'winner' : '' }, [
     el('td', { class: 'c-pos' }, [p.posText || '—']),
     el('td', { class: 'c-player' }, [flag(p), el('span', { class: 'pl-name' }, [p.name])]),
     live ? el('td', { class: 'c-num' }, [p.today || '—']) : null,
@@ -54,9 +55,11 @@ function leaderboardTable(lb) {
     ...roundCols.map((_, i) => el('td', { class: 'c-num c-round' }, [p.rounds[i] || '—'])),
   ]));
 
-  return el('div', { class: 'table-wrap' }, [
+  const wrap = el('div', { class: 'table-wrap' }, [
     el('table', { class: 'lb-table' }, [el('thead', {}, [head]), el('tbody', {}, rows)]),
   ]);
+  if (limit && lb.players.length > limit) wrap.appendChild(el('div', { class: 'lb-more muted small' }, [`+${lb.players.length - limit} more`]));
+  return wrap;
 }
 
 export function buildGolfView({ majors, selectedLabel, leaderboard, loading, error, onSelect, onRetry }) {
@@ -97,5 +100,46 @@ export function buildGolfView({ majors, selectedLabel, leaderboard, loading, err
   }
 
   wrap.appendChild(leaderboardTable(leaderboard));
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// Golf archive (lives under the Standings page): each major is a section with
+// its own year selector and a compact leaderboard for the chosen year.
+// `majors`: [{ label, short, year, leaderboard, loading, error }]
+// ---------------------------------------------------------------------------
+export function buildGolfArchive({ leagueSelect, years, majors, onSelectYear }) {
+  const wrap = el('div', { class: 'golf-archive' });
+  if (leagueSelect) wrap.appendChild(leagueSelect);
+
+  for (const m of majors) {
+    const yearSel = el('select', { class: 'region-select season-select', aria: { label: `${m.label} year` } },
+      years.map((y) => el('option', { value: String(y) }, [String(y)])));
+    yearSel.value = String(m.year);
+    yearSel.addEventListener('change', () => onSelectYear(m.label, Number(yearSel.value)));
+
+    const lb = m.leaderboard;
+    const statusTxt = lb ? (lb.isFinal ? 'Final' : lb.isLive ? 'In progress' : 'Scheduled') : '';
+    wrap.appendChild(el('div', { class: 'golf-major-head' }, [
+      el('h2', { class: 'std-group' }, [m.label]),
+      statusTxt ? el('span', { class: 'golf-sub' + (lb && lb.isLive ? ' live' : '') }, [statusTxt]) : null,
+      el('span', { class: 'spacer' }),
+      yearSel,
+    ]));
+
+    if (m.loading) { wrap.appendChild(skeletonView(1)); continue; }
+    if (m.error) { wrap.appendChild(el('p', { class: 'muted small' }, ['Couldn’t load this year.'])); continue; }
+    if (lb && lb.players.length) {
+      if (lb.isFinal && lb.players[0]) {
+        wrap.appendChild(el('div', { class: 'golf-winner' }, [
+          el('span', { class: 'trophy', aria: { hidden: 'true' } }, ['🏆']),
+          el('span', {}, ['Champion: ']), el('strong', {}, [lb.players[0].name]), el('span', { class: 'muted' }, [` (${lb.players[0].total})`]),
+        ]));
+      }
+      wrap.appendChild(leaderboardTable(lb, 10));
+    } else {
+      wrap.appendChild(el('p', { class: 'muted small' }, ['No leaderboard for this year (the tournament may not have been played yet).']));
+    }
+  }
   return wrap;
 }

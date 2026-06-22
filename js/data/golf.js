@@ -162,3 +162,24 @@ export async function fetchMajorLeaderboard(major) {
   const ev = res.data?.events?.[0] || null;
   return { leaderboard: normalizeEvent(ev), fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
 }
+
+// Approx calendar windows (MMDD) each major falls in, so a PAST year's major can
+// be located (the live calendar only covers the current season).
+const MAJOR_WINDOWS = {
+  'Masters Tournament': ['0401', '0416'],
+  'PGA Championship': ['0508', '0527'],
+  'U.S. Open': ['0610', '0626'],
+  'The Open': ['0710', '0727'],
+};
+
+// Fetch a major's leaderboard for a specific calendar year (used by the golf
+// archive under Standings). Queries the window and matches the event by name.
+export async function fetchMajorByYear(label, year) {
+  const w = MAJOR_WINDOWS[label];
+  if (!w) return { leaderboard: null };
+  const dates = `${year}${w[0]}-${year}${w[1]}`;
+  const ttl = year < new Date().getFullYear() ? 7 * 24 * 3600 * 1000 : APP_CONFIG.scoreboardTtlMs;
+  const res = await getJSON(`${PGA_SCOREBOARD}?dates=${dates}`, { cacheKey: `golf:major:${label}:${year}`, ttlMs: ttl });
+  const ev = (res.data?.events || []).find((e) => (e.name || '') === label) || null;
+  return { leaderboard: normalizeEvent(ev), fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
+}

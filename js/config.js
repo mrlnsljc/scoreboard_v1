@@ -1,4 +1,17 @@
 // =============================================================================
+// FIREBASE (optional) — enables "Sign in with Google" + cross-device sync of
+// favorites/settings. Leave null to keep sign-in disabled (the app works fully
+// without it, storing everything locally). To enable: follow the README
+// "Sign in with Google" steps, then paste your Firebase web config here:
+//
+//   export const FIREBASE_CONFIG = {
+//     apiKey: "AIza...", authDomain: "your-app.firebaseapp.com",
+//     projectId: "your-app", appId: "1:123:web:abc",
+//   };
+// =============================================================================
+export const FIREBASE_CONFIG = null;
+
+// =============================================================================
 // config.js  —  App configuration + the LEAGUE REGISTRY.
 //
 // This is the single place you touch to add a sport/league. Everything else

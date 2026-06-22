@@ -283,6 +283,13 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .golf-winner { display: flex; align-items: center; gap: 8px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
 .golf-winner .trophy { font-size: 18px; }
 
+/* golf archive (under Standings): one section per major + a year select */
+.golf-major-head { display: flex; align-items: center; gap: 10px; margin: 24px 2px 10px; }
+.golf-major-head .std-group { margin: 0; }
+.golf-major-head .spacer { flex: 1; }
+.golf-major-head .golf-sub.live { color: var(--live); }
+.lb-more { padding: 8px 10px; }
+
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
 .lb-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .lb-table th, .lb-table td { padding: 9px 10px; text-align: left; white-space: nowrap; }
@@ -322,6 +329,10 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .std-table .st-name { font-weight: 650; }
 .std-table .c-num { text-align: right; font-variant-numeric: tabular-nums; }
 .std-table thead .c-num { text-align: right; }
+.std-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.std-table th.sortable:hover { color: var(--text); }
+.std-table th.sorted { color: var(--accent); }
+.std-table td.c-num.sorted { color: var(--text); font-weight: 700; }
 @media (max-width: 680px) {
   .std-table .st-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
 }
@@ -413,6 +424,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .seg:not(.active):hover { color: var(--text); }
 
 /* ---- league leaders ------------------------------------------------------- */
+.leaders-scope { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .leaders-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .leader-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
 .leader-cat { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }

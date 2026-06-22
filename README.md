@@ -293,6 +293,55 @@ Then set the app's proxy base URL to `http://localhost:8787`.
 - **Caching/versioning:** bump `CACHE_VERSION` in `sw.js` to push new assets to
   installed clients.
 
+## Sign in with Google (optional cross-device sync)
+
+The app works fully without an account (everything saved locally). Turn on
+"Sign in with Google" to **sync your favorites & settings across devices** via
+Firebase. It's free. Step by step:
+
+1. Go to **https://console.firebase.google.com** and sign in with your Google account.
+2. Click **Add project** → name it (e.g. `scoreboard`) → Continue. You can
+   **disable Google Analytics** (simpler) → Create project.
+3. On the project home, click the **web icon `</>`** ("Add app to get started").
+   Give it a nickname, **leave "Firebase Hosting" unchecked**, click **Register app**.
+4. It shows a `const firebaseConfig = { … }` block. **Copy that object.** (The
+   `apiKey` here is *not* a secret — it's safe in your code; access is protected
+   by login + security rules below.)
+5. Left sidebar → **Build → Authentication → Get started**. Open the
+   **Sign-in method** tab → click **Google** → toggle **Enable** → pick a support
+   email → **Save**.
+6. Still in Authentication → **Settings** tab → **Authorized domains** → **Add domain**
+   → enter `mrlnsljc.github.io` (your live site). `localhost` is already allowed for testing.
+7. Left sidebar → **Build → Firestore Database → Create database** → **Start in
+   production mode** → choose a location → **Enable**.
+8. Firestore → **Rules** tab → replace everything with the rules below → **Publish**:
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /users/{uid} {
+         allow read, write: if request.auth != null && request.auth.uid == uid;
+       }
+     }
+   }
+   ```
+   (This makes each person able to read/write **only their own** data.)
+9. Open **`js/config.js`** and paste your config into `FIREBASE_CONFIG`, e.g.:
+   ```js
+   export const FIREBASE_CONFIG = {
+     apiKey: "AIza…",
+     authDomain: "scoreboard-xxxx.firebaseapp.com",
+     projectId: "scoreboard-xxxx",
+     appId: "1:123…:web:abc…",
+   };
+   ```
+10. Re-publish the site (commit/push). Open the app → **⚙ Settings → Account →
+    Sign in with Google**. On first sign-in your existing local favorites are
+    pushed to the cloud; after that every device you sign into stays in sync.
+
+If `FIREBASE_CONFIG` stays `null`, the Account section just says it isn't set up
+and the app behaves exactly as before (local-only).
+
 ## Limitations
 
 - ESPN's API is undocumented and can change without notice. Parsing is defensive

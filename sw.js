@@ -12,7 +12,7 @@
    Bump CACHE_VERSION to force clients onto new assets.
    ============================================================================= */
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v8';
 const SHELL_CACHE = `sb-shell-${CACHE_VERSION}`;
 const API_CACHE = `sb-api-${CACHE_VERSION}`;
 const IMG_CACHE = `sb-img-${CACHE_VERSION}`;
@@ -42,6 +42,7 @@ const SHELL_ASSETS = [
   './js/store/store.js',
   './js/store/settings.js',
   './js/store/favorites.js',
+  './js/auth/firebase.js',
   './js/ui/skeleton.js',
   './js/ui/render.js',
   './js/ui/views.js',
