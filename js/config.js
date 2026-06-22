@@ -9,7 +9,14 @@
 //     projectId: "your-app", appId: "1:123:web:abc",
 //   };
 // =============================================================================
-export const FIREBASE_CONFIG = null;
+export const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyDq68dpHoWUqGAH29cDorpsO2WkGXhAiNA',
+  authDomain: 'scoreboard-dfa82.firebaseapp.com',
+  projectId: 'scoreboard-dfa82',
+  storageBucket: 'scoreboard-dfa82.firebasestorage.app',
+  messagingSenderId: '825487302338',
+  appId: '1:825487302338:web:cf0fd52d984ffac31ca55b',
+};
 
 // =============================================================================
 // config.js  —  App configuration + the LEAGUE REGISTRY.
