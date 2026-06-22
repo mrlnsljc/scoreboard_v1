@@ -21,6 +21,7 @@ import { buildTeamView } from './ui/team.js';
 // (golf is now part of the Standings page; the old standalone Golf tab was removed)
 import { buildPlayerView } from './ui/player.js';
 import { buildGameView } from './ui/game.js';
+import { buildMyTeamsView } from './ui/myteams.js';
 import { store, setAdapter, LocalStorageAdapter } from './store/store.js';
 import { initAuth, signInGoogle, signOutUser, isConfigured as authConfigured, FirestoreAdapter } from './auth/firebase.js';
 import {
@@ -47,11 +48,13 @@ const state = {
   installPrompt: null,   // captured beforeinstallprompt event
   viewDate: new Date(),  // the day shown in the Today/Scores view (steppable)
   // standings view (mode = teams | leaders; selectedId 'golf' shows the golf archive)
-  standings: { selectedId: null, season: null, mode: 'teams', leadersAllTime: false, result: null, leaders: null, loading: false, leadersLoading: false, error: null, sortIndex: null, sortDir: 'desc' },
+  standings: { selectedId: null, season: null, mode: 'teams', scope: 'grouped', leadersAllTime: false, result: null, leaders: null, loading: false, leadersLoading: false, error: null, sortIndex: null, sortDir: 'desc' },
   golfArchive: { years: [], byMajor: {} }, // byMajor[label] = { year, leaderboard, loading, error }
+  myteams: { byKey: new Map() },           // favKey -> { result, loading, error }
   // team/player/game drill-down (overlays the active tab when type !== null)
   detail: { type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null },
   detailStack: [],
+  gameTimer: null, // live refresh for an open in-progress game page
   user: null, // signed-in Firebase user (null = signed out / not configured)
 };
 
@@ -265,6 +268,11 @@ function sortStandings(i) {
   render();
 }
 
+function setStandingsScope(scope) {
+  state.standings.scope = scope;
+  render();
+}
+
 function selectStandingsSeason(year) {
   const st = state.standings;
   st.season = year;
@@ -318,6 +326,7 @@ async function loadLeaders() {
 const blankDetail = () => ({ type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null });
 
 function pushDetail(next) {
+  clearTimeout(state.gameTimer); state.gameTimer = null;
   if (state.detail.type) state.detailStack.push(state.detail);
   state.detail = next;
   render();
@@ -346,16 +355,35 @@ function openGame(game) {
   if (!league) return;
   pushDetail({ ...blankDetail(), type: 'game', league, gameId: game.id, loading: true });
   fetchGameSummary(league, game.id)
-    .then((r) => { if (isCurrent('game', 'gameId', game.id)) { state.detail.result = r; state.detail.loading = false; render(); } })
+    .then((r) => { if (isCurrent('game', 'gameId', game.id)) { state.detail.result = r; state.detail.loading = false; render(); scheduleGameRefresh(); } })
     .catch((e) => { if (isCurrent('game', 'gameId', game.id)) { state.detail.error = e; state.detail.loading = false; render(); } });
 }
 
+// Refresh an open game page every ~30s while it's in progress.
+function scheduleGameRefresh() {
+  clearTimeout(state.gameTimer);
+  state.gameTimer = null;
+  const d = state.detail;
+  if (d.type !== 'game' || !d.result?.isLive) return;
+  const gid = d.gameId;
+  state.gameTimer = setTimeout(async () => {
+    if (!isCurrent('game', 'gameId', gid)) return;
+    try {
+      const r = await fetchGameSummary(d.league, gid);
+      if (isCurrent('game', 'gameId', gid)) { state.detail.result = r; render(); }
+    } catch { /* keep showing what we have */ }
+    scheduleGameRefresh();
+  }, APP_CONFIG.liveRefreshMs);
+}
+
 function backFromDetail() {
+  clearTimeout(state.gameTimer); state.gameTimer = null;
   const prev = state.detailStack.pop();
   state.detail = prev || blankDetail();
   render();
+  scheduleGameRefresh(); // re-arm if we landed back on a live game
 }
-function clearDetail() { state.detail = blankDetail(); state.detailStack = []; }
+function clearDetail() { clearTimeout(state.gameTimer); state.gameTimer = null; state.detail = blankDetail(); state.detailStack = []; }
 
 async function toggleDetailTeamFav() {
   const t = state.detail.result?.team;
@@ -370,15 +398,53 @@ function standingsAgg() {
   return { anyStale: !!r.stale, anyData: !!r.groups.length, oldest: r.fetchedAt || 0, allFailed: false };
 }
 
+// ---- My Teams dashboard -----------------------------------------------------
+function loadMyTeams() {
+  const favs = favoriteTeamList();
+  const valid = new Set(favs.map((f) => f.favKey));
+  // drop cards for teams no longer favorited
+  for (const k of [...state.myteams.byKey.keys()]) if (!valid.has(k)) state.myteams.byKey.delete(k);
+  // load any new favorites
+  for (const f of favs) {
+    if (!state.myteams.byKey.has(f.favKey)) {
+      state.myteams.byKey.set(f.favKey, { loading: true });
+      loadOneMyTeam(f);
+    }
+  }
+  if (getSettings().view === 'myteams') render();
+}
+
+async function loadOneMyTeam(fav) {
+  const league = getLeague(fav.leagueId);
+  if (!league) { state.myteams.byKey.set(fav.favKey, { error: true, loading: false }); return; }
+  try {
+    const d = await fetchTeamDetail(league, fav.teamId);
+    const now = Date.now();
+    const finals = d.schedule.filter((g) => g.isFinal);
+    const lastGame = finals[finals.length - 1] || null;
+    const nextGame = d.schedule.find((g) => g.isLive || (!g.isFinal && Number.isFinite(g.startMs) && g.startMs >= now - 3 * 3600 * 1000)) || null;
+    state.myteams.byKey.set(fav.favKey, { result: { team: d.team, lastGame, nextGame }, loading: false });
+  } catch (e) {
+    state.myteams.byKey.set(fav.favKey, { error: true, loading: false });
+  }
+  if (getSettings().view === 'myteams') render();
+}
+
+function myTeamsCards() {
+  return favoriteTeamList().map((f) => ({ fav: f, ...(state.myteams.byKey.get(f.favKey) || { loading: true }) }));
+}
+
 // ---- generic view routing (today/upcoming/golf/standings share these) -------
 function refreshCurrentView(opts = {}) {
   const v = getSettings().view;
+  if (v === 'myteams') return loadMyTeams();
   if (v === 'standings') return loadStandings(true);
   return loadView(v, opts);
 }
 function currentAgg() {
   const v = getSettings().view;
   if (v === 'standings') return standingsAgg();
+  if (v === 'myteams') return null;
   return aggregate(v === 'today' ? state.today : state.upcoming);
 }
 
@@ -471,6 +537,19 @@ function render() {
     return;
   }
 
+  // My Teams dashboard
+  if (view === 'myteams') {
+    mount(content, buildMyTeamsView({
+      cards: myTeamsCards(),
+      hasFavorites: favoriteTeamList().length > 0,
+      onSelectTeam: (leagueId, teamId) => openTeam(leagueId, teamId),
+      onSelectGame: (game) => openGame(game),
+      onOpenSearch: () => openSearch(afterFavoritesChanged, openPlayerFromSearch),
+    }));
+    renderStatusBar(s, null);
+    return;
+  }
+
   // standings has its own view shape (league picker + tables)
   if (view === 'standings') {
     const st = state.standings;
@@ -496,6 +575,7 @@ function render() {
       leagues: standingsLeagues(),
       selectedId: st.selectedId,
       mode: st.mode,
+      scope: st.scope,
       result: st.result,
       leaders: st.leaders,
       loading: st.loading,
@@ -512,6 +592,7 @@ function render() {
       onSelectPlayer: (athleteId, league) => openPlayer(league || getLeague(st.selectedId), athleteId),
       onSetMode: setStandingsMode,
       onSetAllTime: setLeadersAllTime,
+      onSetScope: setStandingsScope,
       onSort: sortStandings,
       onRetry: () => (st.mode === 'leaders' ? loadLeaders() : loadStandings(true)),
     }));
@@ -576,6 +657,7 @@ function renderHeader(s) {
     ]),
 
     el('nav', { class: 'tabs' }, [
+      tabButton('myteams', 'My Teams', s.view),
       tabButton('today', 'Today', s.view),
       tabButton('upcoming', 'Upcoming', s.view),
       tabButton('standings', 'Standings', s.view),
@@ -618,6 +700,7 @@ function tabButton(id, label, active) {
       await updateSettings({ view: id });
       render();
       // load the view if we don't have it yet (or refresh in background)
+      if (id === 'myteams') { loadMyTeams(); return; }
       if (id === 'standings') { loadStandings(); return; }
       const map = id === 'today' ? state.today : state.upcoming;
       loadView(id, { showSkeleton: map.size === 0 });
@@ -660,7 +743,7 @@ async function onToggleTeam(side) {
 // unfollowed league) — re-render immediately and reload the view in background.
 function afterFavoritesChanged() {
   render();
-  loadView(getSettings().view, { showSkeleton: false });
+  refreshCurrentView({ showSkeleton: false });
 }
 
 // ---- account / cloud sync (Firebase) ---------------------------------------
@@ -812,8 +895,8 @@ function openSettings() {
     loadView(getSettings().view, { showSkeleton: true });
   });
   const regionBlock = el('div', { class: 'setting-group' }, [
-    el('h3', {}, ['Region · broadcasts']),
-    el('p', { class: 'muted small' }, ['Sets your location for broadcast listings (and local team-name spelling). ESPN’s broadcast data is most complete for the US; coverage for other regions varies.']),
+    el('h3', {}, ['Region · language']),
+    el('p', { class: 'muted small' }, ['Sets team-name spelling/language. Note: ESPN’s free data only includes US TV listings, so the “on TV” line always shows the US national broadcast (there’s no free source for Canadian/other listings).']),
     el('label', { class: 'field' }, [el('span', { class: 'small muted' }, ['Location']), regionSelect]),
   ]);
 
@@ -868,13 +951,15 @@ async function boot() {
     await updateSettings({ seeded: true });
   }
 
-  // Golf moved under Standings — heal any stale persisted view.
-  if (!['today', 'upcoming', 'standings'].includes(getSettings().view)) await updateSettings({ view: 'today' });
+  // heal any stale persisted view (e.g. the removed golf tab).
+  if (!['myteams', 'today', 'upcoming', 'standings'].includes(getSettings().view)) await updateSettings({ view: 'today' });
 
   applyTheme(getSettings().theme);
   render();
   const bootView = getSettings().view;
-  if (bootView === 'standings') loadStandings(); else loadView(bootView, { showSkeleton: true });
+  if (bootView === 'myteams') loadMyTeams();
+  else if (bootView === 'standings') loadStandings();
+  else loadView(bootView, { showSkeleton: true });
 
   // Pre-warm the search team index in the background so the first 🔍 search is
   // instant. Deferred to idle so it doesn't compete with the initial scores

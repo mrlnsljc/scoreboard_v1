@@ -97,6 +97,7 @@ export async function fetchStandings(league, season) {
         abbr: t.abbreviation || '',
         logo: pickLogo(t),
         favKey: teamFavKey(league.sport, String(t.id || '')),
+        clinch: sm.clincher || '',  // x=clinched playoff, y=division, z=top seed, e=eliminated
         cells: cols.map(([k]) => (sm[k] != null && sm[k] !== '' ? sm[k] : '—')),
         values: cols.map(([k]) => (Number.isFinite(sv[k]) ? sv[k] : NaN)),
       };

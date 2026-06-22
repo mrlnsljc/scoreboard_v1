@@ -128,7 +128,13 @@ export function buildGolfArchive({ leagueSelect, years, majors, onSelectYear }) 
     ]));
 
     if (m.loading) { wrap.appendChild(skeletonView(1)); continue; }
-    if (m.error) { wrap.appendChild(el('p', { class: 'muted small' }, ['Couldn’t load this year.'])); continue; }
+    if (m.error) {
+      wrap.appendChild(el('div', { class: 'muted small' }, [
+        'Couldn’t load this year. ',
+        el('button', { class: 'btn ghost small', onclick: () => onSelectYear(m.label, m.year) }, ['Retry']),
+      ]));
+      continue;
+    }
     if (lb && lb.players.length) {
       if (lb.isFinal && lb.players[0]) {
         wrap.appendChild(el('div', { class: 'golf-winner' }, [

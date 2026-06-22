@@ -163,13 +163,14 @@ export async function fetchMajorLeaderboard(major) {
   return { leaderboard: normalizeEvent(ev), fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
 }
 
-// Approx calendar windows (MMDD) each major falls in, so a PAST year's major can
-// be located (the live calendar only covers the current season).
+// Tight calendar windows (MMDD) around each major so a PAST year's major can be
+// located WITHOUT dragging in neighbouring tournaments (which bloats the payload
+// to ~1.7MB and can time out). Majors sit on fairly fixed dates year to year.
 const MAJOR_WINDOWS = {
-  'Masters Tournament': ['0401', '0416'],
-  'PGA Championship': ['0508', '0527'],
-  'U.S. Open': ['0610', '0626'],
-  'The Open': ['0710', '0727'],
+  'Masters Tournament': ['0406', '0414'], // 2nd week of April
+  'PGA Championship': ['0511', '0520'],   // mid-May
+  'U.S. Open': ['0614', '0623'],          // Father's Day weekend
+  'The Open': ['0713', '0721'],           // mid-late July
 };
 
 // Fetch a major's leaderboard for a specific calendar year (used by the golf
@@ -179,7 +180,8 @@ export async function fetchMajorByYear(label, year) {
   if (!w) return { leaderboard: null };
   const dates = `${year}${w[0]}-${year}${w[1]}`;
   const ttl = year < new Date().getFullYear() ? 7 * 24 * 3600 * 1000 : APP_CONFIG.scoreboardTtlMs;
-  const res = await getJSON(`${PGA_SCOREBOARD}?dates=${dates}`, { cacheKey: `golf:major:${label}:${year}`, ttlMs: ttl });
+  // golf payloads are large -> allow a longer timeout than the default.
+  const res = await getJSON(`${PGA_SCOREBOARD}?dates=${dates}`, { cacheKey: `golf:major:${label}:${year}`, ttlMs: ttl, timeoutMs: 25000 });
   const ev = (res.data?.events || []).find((e) => (e.name || '') === label) || null;
   return { leaderboard: normalizeEvent(ev), fetchedAt: res.fetchedAt, stale: res.stale, error: res.error };
 }

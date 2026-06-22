@@ -9,6 +9,13 @@ import { skeletonView } from './skeleton.js';
 import { emptyState, errorState } from './render.js';
 import { isTeamFavorite } from '../store/favorites.js';
 
+const CLINCH = { x: 'Clinched playoff spot', y: 'Clinched division', z: 'Clinched top seed', p: 'Clinched best record', '*': 'Clinched', c: 'Clinched', e: 'Eliminated', o: 'Eliminated' };
+function clinchBadge(c) {
+  if (!c) return null;
+  const elim = /^[eo]$/i.test(c);
+  return el('span', { class: 'clinch ' + (elim ? 'elim' : 'in'), title: CLINCH[c.toLowerCase()] || 'Clinched' }, [c]);
+}
+
 function teamCell(row, onSelectTeam) {
   const logo = row.logo
     ? (() => { const i = el('img', { class: 'logo sm', src: row.logo, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }); i.addEventListener('error', () => i.replaceWith(el('span', { class: 'logo sm mono' }, [(row.abbr || row.name).slice(0, 2)]))); return i; })()
@@ -16,6 +23,7 @@ function teamCell(row, onSelectTeam) {
   return el('td', { class: 'c-team' }, [
     logo,
     el('button', { class: 'link-team', onclick: () => onSelectTeam(row.teamId), title: `View ${row.name}` }, [row.name]),
+    clinchBadge(row.clinch),
   ]);
 }
 
@@ -52,7 +60,7 @@ function modeToggle(mode, onSetMode) {
   return el('div', { class: 'seg-toggle' }, [mk('teams', 'Teams'), mk('leaders', 'Leaders')]);
 }
 
-function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, onRetry) {
+function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry) {
   const wrap = el('div', {});
   // Season vs All-time toggle
   const mk = (id, label, on) => el('button', { class: 'seg' + (on ? ' active' : ''), onclick: () => onSetAllTime(id === 'all') }, [label]);
@@ -64,11 +72,21 @@ function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, on
   if (loading) { wrap.appendChild(skeletonView(1)); return wrap; }
   if (!leaders) { wrap.appendChild(errorState('Couldn’t load leaders', 'Stat leaders were unavailable for this league/season.', { onRetry })); return wrap; }
   if (!leaders.categories.length) { wrap.appendChild(emptyState('No leaders yet', 'Try a different season — stat leaders appear once games have been played.')); return wrap; }
+  const hsSlug = leaders.league.sport === 'soccer' ? 'soccer' : leaders.league.league;
+  const headshot = (id) => {
+    const img = el('img', { class: 'leader-head', src: `https://a.espncdn.com/i/headshots/${hsSlug}/players/full/${id}.png`, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+    img.addEventListener('error', () => img.remove());
+    return img;
+  };
   const grid = el('div', { class: 'leaders-grid' });
   for (const c of leaders.categories) {
     grid.appendChild(el('div', { class: 'leader-card' }, [
-      el('div', { class: 'leader-cat' }, [c.name]),
+      el('button', { class: 'leader-cat-btn', onclick: () => onExpandCategory(c), title: `See the top ${Math.min(c.count || 0, 50)}` }, [
+        el('span', { class: 'leader-cat' }, [c.name]),
+        c.count > c.rows.length ? el('span', { class: 'leader-more' }, [`Top ${Math.min(c.count, 50)} ›`]) : null,
+      ]),
       el('ol', { class: 'leader-list' }, c.rows.map((r) => el('li', {}, [
+        r.athleteId ? headshot(r.athleteId) : null,
         r.athleteId
           ? el('button', { class: 'link-team', onclick: () => onSelectPlayer(r.athleteId, leaders.league) }, [r.name])
           : el('span', {}, [r.name]),
@@ -80,7 +98,7 @@ function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, on
   return wrap;
 }
 
-export function buildStandingsView({ leagues, selectedId, mode = 'teams', result, leaders, loading, leadersLoading, error, sortIndex, sortDir = 'desc', seasons, activeSeason, leadersAllTime, onSelectLeague, onSelectSeason, onSelectTeam, onSelectPlayer, onSetMode, onSetAllTime, onSort, onRetry }) {
+export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope = 'grouped', result, leaders, loading, leadersLoading, error, sortIndex, sortDir = 'desc', seasons, activeSeason, leadersAllTime, onSelectLeague, onSelectSeason, onSelectTeam, onSelectPlayer, onSetMode, onSetAllTime, onSetScope, onExpandCategory, onSort, onRetry }) {
   const wrap = el('div', { class: 'standings-view' });
 
   // league picker
@@ -111,7 +129,7 @@ export function buildStandingsView({ leagues, selectedId, mode = 'teams', result
 
   // ---- leaders mode ----
   if (mode === 'leaders') {
-    wrap.appendChild(leadersBody(leaders, leadersLoading, leadersAllTime, onSelectPlayer, onSetAllTime, onRetry));
+    wrap.appendChild(leadersBody(leaders, leadersLoading, leadersAllTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry));
     return wrap;
   }
 
@@ -123,11 +141,30 @@ export function buildStandingsView({ leagues, selectedId, mode = 'teams', result
     return wrap;
   }
 
-  wrap.appendChild(el('p', { class: 'muted small tap-hint' }, ['Tip: tap a team for its schedule/roster, or tap a column header to sort.']));
+  // Grouped (by conference) vs Overall (all teams in one table) — only when
+  // the league actually has more than one group.
+  const multiGroup = result.groups.length > 1;
+  const controls = el('div', { class: 'std-controls' }, [
+    el('p', { class: 'muted small tap-hint' }, ['Tap a team for its schedule/roster, or a column header to sort.']),
+  ]);
+  if (multiGroup) {
+    const mk = (id, label) => el('button', { class: 'seg' + (scope === id ? ' active' : ''), onclick: () => onSetScope(id) }, [label]);
+    controls.appendChild(el('div', { class: 'seg-toggle' }, [mk('grouped', 'By group'), mk('overall', 'Overall')]));
+  }
+  wrap.appendChild(controls);
+
   const si = sortIndex != null ? sortIndex : (result.defaultSortIndex ?? 0);
-  for (const group of result.groups) {
+  const groups = (scope === 'overall' && multiGroup)
+    ? [{ name: '', rows: result.groups.flatMap((g) => g.rows) }]
+    : result.groups;
+  for (const group of groups) {
     if (group.name) wrap.appendChild(el('h2', { class: 'std-group' }, [group.name]));
     wrap.appendChild(groupTable(group, result.columns, onSelectTeam, si, sortDir, onSort));
+  }
+
+  // clinch legend (only if any team has a marker)
+  if (result.groups.some((g) => g.rows.some((r) => r.clinch))) {
+    wrap.appendChild(el('p', { class: 'muted small clinch-legend' }, ['x = clinched playoff · y = division · z = top seed · e = eliminated']));
   }
   return wrap;
 }

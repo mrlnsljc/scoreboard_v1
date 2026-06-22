@@ -23,9 +23,10 @@ function pickLogo(t) {
 function num(v) { return v && typeof v === 'object' ? (v.displayValue ?? v.value) : v; }
 
 export async function fetchGameSummary(league, gameId) {
-  const { region, lang } = getRegion(getSettings().regionCode);
-  const url = `${SITE}/${league.sport}/${league.league}/summary?event=${gameId}&region=${region}&lang=${lang}`;
-  const res = await getJSON(url, { cacheKey: `summary:${league.id}:${gameId}:${region}`, ttlMs: 30 * 1000 });
+  const { lang } = getRegion(getSettings().regionCode);
+  // region=us for broadcasts (ESPN only has US listings); lang follows the user.
+  const url = `${SITE}/${league.sport}/${league.league}/summary?event=${gameId}&region=us&lang=${lang}`;
+  const res = await getJSON(url, { cacheKey: `summary:${league.id}:${gameId}:${lang}`, ttlMs: 30 * 1000 });
   const d = res.data || {};
 
   const hc = d.header?.competitions?.[0] || {};
@@ -65,11 +66,29 @@ export async function fetchGameSummary(league, gameId) {
     home: (byAbbr[home.abbr]?.[i]?.displayValue) ?? '—',
   }));
 
+  // full per-player box score (per team -> one or more stat blocks, e.g. MLB
+  // has batting + pitching). Labels + each athlete's parallel `stats` array.
+  const playerBox = (d.boxscore?.players || []).map((grp) => ({
+    team: (grp.team || {}).abbreviation || '',
+    blocks: (grp.statistics || []).map((blk) => ({
+      title: blk.text || blk.name || '',
+      labels: blk.labels || blk.names || [],
+      players: (blk.athletes || []).map((a) => ({
+        id: String(a.athlete?.id || ''),
+        name: a.athlete?.shortName || a.athlete?.displayName || '',
+        starter: !!a.starter,
+        dnp: !!a.didNotPlay,
+        reason: a.reason || '',
+        stats: a.stats || [],
+      })),
+    })),
+  }));
+
   return {
     league, gameId, home, away,
     status: type.shortDetail || type.detail || '',
     state: type.state || 'pre', isLive: type.state === 'in', isFinal: type.state === 'post',
-    leaders, teamStats,
+    leaders, teamStats, playerBox,
     venue: hc.venue?.fullName || '',
     fetchedAt: res.fetchedAt, stale: res.stale, error: res.error,
   };

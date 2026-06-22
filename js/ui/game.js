@@ -70,6 +70,32 @@ function statComparison(g) {
   ])]);
 }
 
+function boxScore(result, onSelectPlayer) {
+  if (!result.playerBox || !result.playerBox.length) return null;
+  const wrap = el('div', { class: 'box-wrap' });
+  for (const grp of result.playerBox) {
+    if (!grp.blocks.length) continue;
+    wrap.appendChild(el('div', { class: 'box-team' }, [grp.team]));
+    for (const blk of grp.blocks) {
+      const head = el('tr', {}, [
+        el('th', { class: 'c-player' }, [blk.title || 'Player']),
+        ...blk.labels.map((l) => el('th', { class: 'c-num' }, [l])),
+      ]);
+      const rows = blk.players.map((p) => {
+        const nameCell = el('td', { class: 'c-player' + (p.starter ? ' starter' : '') }, [
+          p.id ? el('button', { class: 'link-team', onclick: () => onSelectPlayer(p.id) }, [p.name]) : el('span', {}, [p.name]),
+        ]);
+        if (p.dnp || !p.stats.length) {
+          return el('tr', { class: 'dnp' }, [nameCell, el('td', { class: 'c-num dnp-note', colspan: String(blk.labels.length) }, ['DNP' + (p.reason ? ` — ${p.reason}` : '')])]);
+        }
+        return el('tr', {}, [nameCell, ...p.stats.map((s) => el('td', { class: 'c-num' }, [s || '—']))]);
+      });
+      wrap.appendChild(el('div', { class: 'table-wrap' }, [el('table', { class: 'box-table' }, [el('thead', {}, [head]), el('tbody', {}, rows)])]));
+    }
+  }
+  return wrap;
+}
+
 export function buildGameView({ result, loading, error, onBack, onSelectPlayer, onRetry }) {
   const wrap = el('div', { class: 'detail-view' });
   wrap.appendChild(backBar('Back', onBack));
@@ -91,6 +117,9 @@ export function buildGameView({ result, loading, error, onBack, onSelectPlayer, 
   const cmp = statComparison(result);
   if (cmp) { wrap.appendChild(el('h3', { class: 'detail-section' }, ['Team stats'])); wrap.appendChild(cmp); }
 
-  if (!ls && !perf && !cmp) wrap.appendChild(el('p', { class: 'muted small' }, ['Detailed stats aren’t available for this game yet.']));
+  const box = boxScore(result, onSelectPlayer);
+  if (box) { wrap.appendChild(el('h3', { class: 'detail-section' }, ['Box score'])); wrap.appendChild(box); }
+
+  if (!ls && !perf && !cmp && !box) wrap.appendChild(el('p', { class: 'muted small' }, ['Detailed stats aren’t available for this game yet.']));
   return wrap;
 }

@@ -47,18 +47,19 @@ import { getSettings } from '../store/settings.js';
 
 const SITE_API = 'https://site.api.espn.com/apis/site/v2/sports';
 
-// Current region/lang params from settings (the "location" picker). These
-// localize broadcast listings + some team names where ESPN has the data.
-function regionParams() {
-  return getRegion(getSettings().regionCode);
+// Language from the user's region picker (localizes team-name spelling).
+function langParam() {
+  return getRegion(getSettings().regionCode).lang || 'en';
 }
 
 // ---- Endpoint builders ------------------------------------------------------
 export function scoreboardUrl(league, datesParam) {
   const base = `${SITE_API}/${league.sport}/${league.league}/scoreboard`;
-  const { region, lang } = regionParams();
-  // `limit` bumps the default page size (soccer ranges can exceed the default).
-  const params = new URLSearchParams({ limit: '300', region, lang });
+  // NOTE: we always request region=us for broadcasts. ESPN's free API only
+  // carries US TV listings — region=ca/gb/etc. return EMPTY broadcasts (not local
+  // networks), which left the broadcast line blank. Using `us` shows the (US)
+  // national listing instead of nothing. `lang` still follows the user's region.
+  const params = new URLSearchParams({ limit: '300', region: 'us', lang: langParam() });
   if (datesParam) params.set('dates', datesParam);
   return `${base}?${params.toString()}`;
 }

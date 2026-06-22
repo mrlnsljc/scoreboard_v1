@@ -31,6 +31,8 @@ export async function fetchPlayerDetail(league, athleteId) {
     team: (ath.team || {}).displayName || '',
     height: ath.displayHeight || '', weight: ath.displayWeight || '', age: ath.age || '',
     college: (ath.college || {}).name || '',
+    flag: (ath.flag || {}).href || '',                    // nationality flag (soccer etc.)
+    citizenship: ath.citizenship || (ath.birthPlace || {}).country || '',
     summaryLabel: od.statsSummary?.displayName || '',
     summary: summaryStats.map((s) => ({
       label: s.shortDisplayName || s.abbreviation || s.displayName,

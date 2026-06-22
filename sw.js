@@ -12,7 +12,7 @@
    Bump CACHE_VERSION to force clients onto new assets.
    ============================================================================= */
 
-const CACHE_VERSION = 'v8';
+const CACHE_VERSION = 'v11';
 const SHELL_CACHE = `sb-shell-${CACHE_VERSION}`;
 const API_CACHE = `sb-api-${CACHE_VERSION}`;
 const IMG_CACHE = `sb-img-${CACHE_VERSION}`;
@@ -52,6 +52,7 @@ const SHELL_ASSETS = [
   './js/ui/team.js',
   './js/ui/player.js',
   './js/ui/game.js',
+  './js/ui/myteams.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-180.png',
