@@ -470,6 +470,22 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent);
 .leader-head { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; background: var(--bg-elev); flex: none; }
 .leader-list .link-team, .leader-list li > span:not(.leader-val) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .leader-val { margin-left: auto; padding-left: 6px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.leader-cat-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; background: none; border: 0; padding: 0 0 8px; cursor: pointer; font: inherit; text-align: left; }
+.leader-cat-btn .leader-cat { margin-bottom: 0; }
+.leader-cat-btn:hover .leader-cat { color: var(--text); }
+.leader-cat-btn:hover .leader-more { color: var(--accent); }
+.leader-more { font-size: 11px; color: var(--muted-2); font-weight: 700; white-space: nowrap; }
+
+/* expanded category modal */
+.lx-list { padding: 6px 4px; }
+.lx-title { font-weight: 750; font-size: 15px; }
+.lx-loading { padding: 10px; }
+.lx-row { display: grid; grid-template-columns: 26px 28px 1fr auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 8px; }
+.lx-row:hover { background: var(--card-hover); }
+.lx-rank { color: var(--muted-2); font-variant-numeric: tabular-nums; text-align: right; font-size: 13px; }
+.lx-head { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: var(--bg-elev); flex: none; }
+.lx-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lx-val { font-weight: 800; font-variant-numeric: tabular-nums; }
 
 /* ---- footer --------------------------------------------------------------- */
 .app-footer { text-align: center; color: var(--muted-2); font-size: 12px; padding: 22px 16px 28px; flex-shrink: 0; }

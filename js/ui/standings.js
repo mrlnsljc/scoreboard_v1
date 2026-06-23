@@ -168,3 +168,48 @@ export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope 
   }
   return wrap;
 }
+
+// ---------------------------------------------------------------------------
+// Expanded category modal (top 50 of one stat). Starts showing the already-
+// resolved top 5 with a "loading more…" note, then `update(fullRows)` swaps in
+// the complete list once the extra athlete names resolve.
+// ---------------------------------------------------------------------------
+export function buildLeadersExpandModal({ title, rows, hsSlug, onSelectPlayer, onClose }) {
+  const headshot = (id) => {
+    if (!id) return el('span', { class: 'lx-head mono' }, ['']);
+    const i = el('img', { class: 'lx-head', src: `https://a.espncdn.com/i/headshots/${hsSlug}/players/full/${id}.png`, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+    i.addEventListener('error', () => i.replaceWith(el('span', { class: 'lx-head mono' }, [''])));
+    return i;
+  };
+  let loadingMore = true;
+  const list = el('div', { class: 'search-results lx-list' });
+
+  function render() {
+    list.replaceChildren(...rows.map((r) => el('div', { class: 'lx-row' }, [
+      el('span', { class: 'lx-rank' }, [String(r.rank)]),
+      headshot(r.athleteId),
+      r.athleteId
+        ? el('button', { class: 'link-team lx-name', onclick: () => onSelectPlayer(r.athleteId) }, [r.name])
+        : el('span', { class: 'lx-name' }, [r.name]),
+      el('span', { class: 'lx-val' }, [r.value]),
+    ])));
+    if (loadingMore) list.appendChild(el('div', { class: 'muted small lx-loading' }, ['Loading the rest…']));
+  }
+
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  function close() { document.removeEventListener('keydown', onKey); overlay.remove(); if (onClose) onClose(); }
+
+  const overlay = el('div', { class: 'overlay search-overlay', onclick: (e) => { if (e.target === overlay) close(); } }, [
+    el('div', { class: 'search-modal', role: 'dialog', aria: { label: title } }, [
+      el('div', { class: 'search-head' }, [
+        el('span', { class: 'lx-title' }, [title]),
+        el('span', { class: 'spacer' }),
+        el('button', { class: 'btn ghost icon-btn', onclick: close, aria: { label: 'Close' } }, ['✕']),
+      ]),
+      list,
+    ]),
+  ]);
+  document.addEventListener('keydown', onKey);
+  render();
+  return { overlay, update(newRows) { rows = newRows; loadingMore = false; render(); } };
+}

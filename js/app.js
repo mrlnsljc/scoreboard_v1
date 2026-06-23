@@ -10,12 +10,12 @@ import { clearResponseCache } from './data/http.js';
 import { buildTeamIndex } from './data/teams.js';
 import { fetchMajorByYear, MAJOR_LABELS, MAJOR_SHORT } from './data/golf.js';
 import { fetchStandings } from './data/standings.js';
-import { fetchLeaders } from './data/leaders.js';
+import { fetchLeaders, expandCategory } from './data/leaders.js';
 import { fetchTeamDetail } from './data/team.js';
 import { fetchPlayerDetail } from './data/player.js';
 import { fetchGameSummary } from './data/game.js';
 import { openSearch } from './ui/search.js';
-import { buildStandingsView } from './ui/standings.js';
+import { buildStandingsView, buildLeadersExpandModal } from './ui/standings.js';
 import { buildGolfArchive } from './ui/golf.js';
 import { buildTeamView } from './ui/team.js';
 // (golf is now part of the Standings page; the old standalone Golf tab was removed)
@@ -286,6 +286,24 @@ function setLeadersAllTime(allTime) {
   st.leadersAllTime = allTime;
   st.leaders = null;
   loadLeaders();
+}
+
+// Expand a leaders category to its full top-50 in a modal.
+async function openLeadersExpand(category) {
+  const league = state.standings.leaders?.league;
+  if (!league) return;
+  const hsSlug = league.sport === 'soccer' ? 'soccer' : league.league;
+  const modal = buildLeadersExpandModal({
+    title: category.name,
+    hsSlug,
+    rows: category.rows,            // instant top-5 while the rest resolve
+    onSelectPlayer: (id) => openPlayer(league, id),
+  });
+  document.body.appendChild(modal.overlay);
+  try {
+    const full = await expandCategory(category);
+    modal.update(full);
+  } catch { modal.update(category.rows); }
 }
 
 function setStandingsMode(mode) {
@@ -593,6 +611,7 @@ function render() {
       onSetMode: setStandingsMode,
       onSetAllTime: setLeadersAllTime,
       onSetScope: setStandingsScope,
+      onExpandCategory: openLeadersExpand,
       onSort: sortStandings,
       onRetry: () => (st.mode === 'leaders' ? loadLeaders() : loadStandings(true)),
     }));
