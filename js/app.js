@@ -12,10 +12,12 @@ import { fetchMajorByYear, MAJOR_LABELS, MAJOR_SHORT } from './data/golf.js';
 import { fetchStandings } from './data/standings.js';
 import { fetchLeaders, expandCategory } from './data/leaders.js';
 import { fetchTeamDetail } from './data/team.js';
+import { fetchTeamAdvancedStats } from './data/teamstats.js';
 import { fetchPlayerDetail } from './data/player.js';
 import { fetchGameSummary } from './data/game.js';
 import { openSearch } from './ui/search.js';
 import { buildStandingsView, buildLeadersExpandModal } from './ui/standings.js';
+import { leaguePicker } from './ui/leaguePicker.js';
 import { buildGolfArchive } from './ui/golf.js';
 import { buildTeamView } from './ui/team.js';
 // (golf is now part of the Standings page; the old standalone Golf tab was removed)
@@ -33,7 +35,7 @@ import {
   hasAnyFavorites, onFavoritesChange,
 } from './store/favorites.js';
 import { el, $, mount } from './util/dom.js';
-import { timeAgo, yyyymmdd, yyyymmddRange, addDays, isSameLocalDay, relativeDayLabel, formatLocalDay } from './util/dates.js';
+import { timeAgo, yyyymmdd, yyyymmddRange, addDays, isSameLocalDay, relativeDayLabel, formatLocalDay, localDayKey, parseLocalDate } from './util/dates.js';
 import { skeletonView } from './ui/skeleton.js';
 import { buildTodayView, buildUpcomingView } from './ui/views.js';
 import { errorState } from './ui/render.js';
@@ -356,8 +358,16 @@ function openTeam(leagueId, teamId) {
   if (!league) return;
   pushDetail({ ...blankDetail(), type: 'team', league, teamId, loading: true });
   fetchTeamDetail(league, teamId)
-    .then((r) => { if (isCurrent('team', 'teamId', teamId)) { state.detail.result = r; state.detail.loading = false; render(); } })
+    .then((r) => { if (isCurrent('team', 'teamId', teamId)) { state.detail.result = r; state.detail.loading = false; render(); loadTeamAdvanced(league, teamId); } })
     .catch((e) => { if (isCurrent('team', 'teamId', teamId)) { state.detail.error = e; state.detail.loading = false; render(); } });
+}
+
+// Advanced/season team stats are a second, lazy fetch (CORS-open core API) that
+// fills in once the team page has already painted.
+function loadTeamAdvanced(league, teamId) {
+  fetchTeamAdvancedStats(league, teamId)
+    .then((adv) => { console.log('[adv]', { teamId, cur: isCurrent('team', 'teamId', teamId), hasResult: !!state.detail.result, stats: adv && adv.stats.length }); if (isCurrent('team', 'teamId', teamId) && state.detail.result) { state.detail.result.advanced = adv; render(); } })
+    .catch((e) => { console.warn('[adv] err', e); });
 }
 
 function openPlayer(league, athleteId) {
@@ -441,7 +451,8 @@ async function loadOneMyTeam(fav) {
     const finals = d.schedule.filter((g) => g.isFinal);
     const lastGame = finals[finals.length - 1] || null;
     const nextGame = d.schedule.find((g) => g.isLive || (!g.isFinal && Number.isFinite(g.startMs) && g.startMs >= now - 3 * 3600 * 1000)) || null;
-    state.myteams.byKey.set(fav.favKey, { result: { team: d.team, lastGame, nextGame }, loading: false });
+    const recentForm = finals.slice(-5); // last 5 finals for the form pills
+    state.myteams.byKey.set(fav.favKey, { result: { team: d.team, lastGame, nextGame, recentForm, schedule: d.schedule }, loading: false });
   } catch (e) {
     state.myteams.byKey.set(fav.favKey, { error: true, loading: false });
   }
@@ -471,6 +482,16 @@ function todayDateBar() {
   const today = isViewingToday();
   const label = relativeDayLabel(state.viewDate);   // Today / Yesterday / date
   const full = formatLocalDay(state.viewDate);
+
+  // Jump-to-date: a native date input so any day is one tap away (no stepping).
+  const picker = el('input', {
+    type: 'date', class: 'date-input', value: localDayKey(state.viewDate),
+    min: localDayKey(addDays(new Date(), -APP_CONFIG.maxPastDays)),
+    max: localDayKey(addDays(new Date(), 366)),
+    title: 'Jump to a date', aria: { label: 'Jump to a date' },
+  });
+  picker.addEventListener('change', () => { const d = parseLocalDate(picker.value); if (d) goToDate(d); });
+
   return el('div', { class: 'date-bar' }, [
     el('button', { class: 'btn ghost icon-btn', title: 'Previous day', aria: { label: 'Previous day' }, onclick: () => stepDay(-1) }, ['‹']),
     el('div', { class: 'date-label' }, [
@@ -478,6 +499,7 @@ function todayDateBar() {
       label !== full ? el('span', { class: 'date-sub' }, [full]) : null,
     ]),
     el('button', { class: 'btn ghost icon-btn', title: 'Next day', aria: { label: 'Next day' }, onclick: () => stepDay(1) }, ['›']),
+    el('label', { class: 'date-jump', title: 'Jump to a date' }, [el('span', { class: 'date-jump-ico', aria: { hidden: 'true' } }, ['📅']), picker]),
     !today ? el('button', { class: 'btn ghost small jump-today', onclick: jumpToday }, ['Jump to today']) : null,
   ]);
 }
@@ -489,6 +511,16 @@ function stepDay(n) {
   if (next < minDate && n < 0) return;
   state.viewDate = next;
   state.today = new Map();   // drop the previous day's data so a skeleton shows
+  loadView('today', { showSkeleton: true });
+}
+
+// Jump straight to a chosen day (from the date picker).
+function goToDate(date) {
+  if (!date || isSameLocalDay(date, state.viewDate)) return;
+  const minDate = addDays(new Date(), -APP_CONFIG.maxPastDays);
+  if (date < minDate) date = minDate;
+  state.viewDate = date;
+  state.today = new Map();
   loadView('today', { showSkeleton: true });
 }
 function jumpToday() {
@@ -574,11 +606,10 @@ function render() {
 
     // golf archive (selected via the league dropdown)
     if (st.selectedId === 'golf') {
-      const sel = el('select', { class: 'region-select league-select', aria: { label: 'League' } },
-        standingsLeagues().map((l) => el('option', { value: l.id }, [l.name])));
-      sel.value = 'golf';
-      sel.addEventListener('change', () => selectStandingsLeague(sel.value));
-      const leagueSelect = el('div', { class: 'standings-bar' }, [el('span', { class: 'small muted' }, ['League']), sel]);
+      const leagueSelect = el('div', { class: 'standings-bar' }, [
+        el('span', { class: 'small muted' }, ['League']),
+        leaguePicker({ leagues: standingsLeagues(), selectedId: 'golf', onSelect: selectStandingsLeague }),
+      ]);
       const ga = state.golfArchive;
       const majors = MAJOR_LABELS.map((label) => {
         const m = ga.byMajor[label] || {};

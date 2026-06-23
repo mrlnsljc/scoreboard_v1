@@ -84,11 +84,23 @@ export async function fetchGameSummary(league, gameId) {
     })),
   }));
 
+  // Win probability — ESPN ships a per-play `winprobability` array (present on
+  // MLB/NBA, often absent on NHL/NFL/soccer). The last entry is the live/current
+  // home win %. We surface just that; the UI hides the bar when it's null.
+  const wpArr = Array.isArray(d.winprobability) ? d.winprobability : [];
+  const wpLast = wpArr.length ? wpArr[wpArr.length - 1] : null;
+  const winProb = (wpLast && typeof wpLast.homeWinPercentage === 'number')
+    ? {
+        homePct: Math.max(0, Math.min(100, wpLast.homeWinPercentage * 100)),
+        tiePct: Math.max(0, Math.min(100, (wpLast.tiePercentage || 0) * 100)),
+      }
+    : null;
+
   return {
     league, gameId, home, away,
     status: type.shortDetail || type.detail || '',
     state: type.state || 'pre', isLive: type.state === 'in', isFinal: type.state === 'post',
-    leaders, teamStats, playerBox,
+    leaders, teamStats, playerBox, winProb,
     venue: hc.venue?.fullName || '',
     fetchedAt: res.fetchedAt, stale: res.stale, error: res.error,
   };

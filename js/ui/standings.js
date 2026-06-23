@@ -8,6 +8,7 @@ import { el } from '../util/dom.js';
 import { skeletonView } from './skeleton.js';
 import { emptyState, errorState } from './render.js';
 import { isTeamFavorite } from '../store/favorites.js';
+import { leaguePicker } from './leaguePicker.js';
 
 const CLINCH = { x: 'Clinched playoff spot', y: 'Clinched division', z: 'Clinched top seed', p: 'Clinched best record', '*': 'Clinched', c: 'Clinched', e: 'Eliminated', o: 'Eliminated' };
 function clinchBadge(c) {
@@ -101,15 +102,10 @@ function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, on
 export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope = 'grouped', result, leaders, loading, leadersLoading, error, sortIndex, sortDir = 'desc', seasons, activeSeason, leadersAllTime, onSelectLeague, onSelectSeason, onSelectTeam, onSelectPlayer, onSetMode, onSetAllTime, onSetScope, onExpandCategory, onSort, onRetry }) {
   const wrap = el('div', { class: 'standings-view' });
 
-  // league picker
-  const select = el('select', { class: 'region-select league-select', aria: { label: 'League' } },
-    leagues.map((l) => el('option', { value: l.id }, [l.name])));
-  select.value = selectedId || '';
-  select.addEventListener('change', () => onSelectLeague(select.value));
-
+  // league picker (custom control so each league shows its logo)
   const bar = el('div', { class: 'standings-bar' }, [
     el('span', { class: 'small muted' }, ['League']),
-    select,
+    leaguePicker({ leagues, selectedId, onSelect: onSelectLeague }),
     modeToggle(mode, onSetMode),
   ]);
 

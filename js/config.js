@@ -117,55 +117,73 @@ export function getRegion(code) {
 //   hasDraws  true for soccer — a finished game can end with no winner (draw).
 //   intl      true for national-team competitions (affects copy + grouping).
 //   tsdb      TheSportsDB league name, used only as a logo/badge fallback source.
+//   logo      ESPN league-logo URL. NA leagues are constructable from the slug,
+//             but soccer logos use an internal numeric id (NOT the slug), so we
+//             store the resolved href here (harvested from each scoreboard's
+//             leagues[0].logos). Used by the custom league picker (a native
+//             <select> can't render per-option images).
 //
 // NOTE: the same physical league registry powers the "single sport" build and
 // the full multi-sport build — the only difference is which ids the user follows.
 // -----------------------------------------------------------------------------
+const NA_LOGO = (slug) => `https://a.espncdn.com/i/teamlogos/leagues/500/${slug}.png`;
+
 export const LEAGUES = [
   // ---- North American major leagues ----
   { id: 'nhl', name: 'NHL', short: 'NHL', sport: 'hockey', league: 'nhl',
-    group: 'Hockey', hasDraws: false, intl: false, tsdb: 'NHL' },
+    group: 'Hockey', hasDraws: false, intl: false, tsdb: 'NHL', logo: NA_LOGO('nhl') },
 
   { id: 'nba', name: 'NBA', short: 'NBA', sport: 'basketball', league: 'nba',
-    group: 'Basketball', hasDraws: false, intl: false, tsdb: 'NBA' },
+    group: 'Basketball', hasDraws: false, intl: false, tsdb: 'NBA', logo: NA_LOGO('nba') },
 
   { id: 'nfl', name: 'NFL', short: 'NFL', sport: 'football', league: 'nfl',
-    group: 'Football', hasDraws: true /* ties are rare but possible */, intl: false, tsdb: 'NFL' },
+    group: 'Football', hasDraws: true /* ties are rare but possible */, intl: false, tsdb: 'NFL', logo: NA_LOGO('nfl') },
 
   { id: 'mlb', name: 'MLB', short: 'MLB', sport: 'baseball', league: 'mlb',
-    group: 'Baseball', hasDraws: false, intl: false, tsdb: 'MLB' },
+    group: 'Baseball', hasDraws: false, intl: false, tsdb: 'MLB', logo: NA_LOGO('mlb') },
 
   // ---- Club soccer ----
   { id: 'eng.1', name: 'Premier League', short: 'EPL', sport: 'soccer', league: 'eng.1',
-    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'English Premier League' },
+    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'English Premier League', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png' },
 
   { id: 'esp.1', name: 'La Liga', short: 'La Liga', sport: 'soccer', league: 'esp.1',
-    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'Spanish La Liga' },
+    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'Spanish La Liga', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png' },
 
   { id: 'ger.1', name: 'Bundesliga', short: 'Bundesliga', sport: 'soccer', league: 'ger.1',
-    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'German Bundesliga' },
+    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'German Bundesliga', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png' },
 
   { id: 'ita.1', name: 'Serie A', short: 'Serie A', sport: 'soccer', league: 'ita.1',
-    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'Italian Serie A' },
+    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'Italian Serie A', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png' },
 
   { id: 'uefa.champions', name: 'Champions League', short: 'UCL', sport: 'soccer', league: 'uefa.champions',
-    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'UEFA Champions League' },
+    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'UEFA Champions League', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png' },
 
   // ---- International soccer (follow the Croatia national team here) ----
   // A national team keeps the SAME ESPN team id across these competitions, so
   // favoriting "Croatia" in any one of them highlights its games in all of them.
   { id: 'fifa.world', name: 'World Cup', short: 'World Cup', sport: 'soccer', league: 'fifa.world',
-    group: 'International', hasDraws: true, intl: true, tsdb: '' },
+    group: 'International', hasDraws: true, intl: true, tsdb: '', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/4.png' },
 
   { id: 'uefa.nations', name: 'UEFA Nations League', short: 'Nations', sport: 'soccer', league: 'uefa.nations',
-    group: 'International', hasDraws: true, intl: true, tsdb: '' },
+    group: 'International', hasDraws: true, intl: true, tsdb: '', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2395.png' },
 
   { id: 'fifa.worldq.uefa', name: 'World Cup Qualifying (UEFA)', short: 'WCQ', sport: 'soccer', league: 'fifa.worldq.uefa',
-    group: 'International', hasDraws: true, intl: true, tsdb: '' },
+    group: 'International', hasDraws: true, intl: true, tsdb: '', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/67.png' },
 
   { id: 'fifa.friendly', name: 'Int’l Friendlies', short: 'Friendlies', sport: 'soccer', league: 'fifa.friendly',
-    group: 'International', hasDraws: true, intl: true, tsdb: '' },
+    group: 'International', hasDraws: true, intl: true, tsdb: '', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/53.png' },
 ];
+
+// Resolve a league's logo URL. Works for real LEAGUES entries (uses their stored
+// `logo`) and for the synthetic Standings-only options (golf uses an emoji, so it
+// has no logo; F1/racing is constructable from its slug).
+export function leagueLogoUrl(league) {
+  if (!league) return '';
+  if (league.logo) return league.logo;
+  if (league.sport === 'racing' || league.league === 'f1') return NA_LOGO('f1');
+  if (['nhl', 'nba', 'nfl', 'mlb'].includes(league.league)) return NA_LOGO(league.league);
+  return '';
+}
 
 // Convenience lookups ---------------------------------------------------------
 export const LEAGUE_BY_ID = Object.fromEntries(LEAGUES.map((l) => [l.id, l]));

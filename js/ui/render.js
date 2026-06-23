@@ -72,9 +72,14 @@ function teamRow(side, game, onToggleTeam) {
 // ---- game card --------------------------------------------------------------
 export function gameCard(game, { onToggleTeam, onOpenGame, showLeague = false, pinned = false } = {}) {
   const followed = pinned; // pinned cards are favorite-involving -> highlight
+  // Team-color accent: tint with a favorited side's color, else the home side's.
+  const accentSide = isTeamFavorite(game.home.favKey) ? game.home
+    : isTeamFavorite(game.away.favKey) ? game.away : game.home;
+  const accent = accentSide.color || accentSide.altColor || '';
   const card = el('div', {
-    class: 'card game-card' + (game.isLive ? ' is-live' : '') + (followed ? ' pinned' : '') + (onOpenGame ? ' clickable' : ''),
+    class: 'card game-card' + (game.isLive ? ' is-live' : '') + (followed ? ' pinned' : '') + (onOpenGame ? ' clickable' : '') + (accent ? ' accented' : ''),
     dataset: { gameId: game.id, leagueId: game.leagueId },
+    style: accent ? { '--team-accent': accent } : null,
     onclick: onOpenGame ? () => onOpenGame(game) : undefined,
   }, [
     el('div', { class: 'card-top' }, [
@@ -93,6 +98,25 @@ export function gameCard(game, { onToggleTeam, onOpenGame, showLeague = false, p
     ]) : null,
   ]);
   return card;
+}
+
+// ---- form guide (last-5 W/L/D pills) ----------------------------------------
+// Given a team's normalized schedule + its teamId, render up to 5 pills for the
+// most recent finished games (oldest → newest), color-coded W/L/D. Returns null
+// if there's nothing finished to show.
+export function formPills(schedule, teamId, { max = 5 } = {}) {
+  const finals = (schedule || []).filter((g) => g.isFinal && (g.home?.teamId === teamId || g.away?.teamId === teamId));
+  const last = finals.slice(-max);
+  if (!last.length) return null;
+  const pills = last.map((g) => {
+    const me = g.home.teamId === teamId ? g.home : g.away;
+    const opp = g.home.teamId === teamId ? g.away : g.home;
+    const res = g.isDraw ? 'D' : (me.winner ? 'W' : 'L');
+    const cls = res === 'W' ? 'win' : res === 'L' ? 'loss' : 'draw';
+    const score = (me.score !== '' && opp.score !== '') ? `${me.score}-${opp.score}` : '';
+    return el('span', { class: `form-pill ${cls}`, title: `${res} ${score} vs ${opp.abbr || opp.displayName}`.trim() }, [res]);
+  });
+  return el('div', { class: 'form-guide', aria: { label: 'Recent form, last 5 games' } }, pills);
 }
 
 // ---- section -----------------------------------------------------------------

@@ -5,7 +5,8 @@
 
 import { el } from '../util/dom.js';
 import { formatLocalDay, formatLocalTime } from '../util/dates.js';
-import { emptyState } from './render.js';
+import { emptyState, formPills } from './render.js';
+import { downloadTeamICS } from '../util/ics.js';
 
 function logoEl(team) {
   if (!team.logo) return el('div', { class: 'mt-logo mono', style: { background: team.color || '#3a4250' } }, [(team.abbr || team.name).slice(0, 3)]);
@@ -60,15 +61,19 @@ export function buildMyTeamsView({ cards, hasFavorites, onSelectTeam, onSelectGa
       continue;
     }
     const t = c.result.team;
-    grid.appendChild(el('div', { class: 'card mt-card' }, [
+    const sched = c.result.schedule || [];
+    grid.appendChild(el('div', { class: 'card mt-card' + (t.color ? ' accented' : ''), style: t.color ? { '--team-accent': t.color } : null }, [
       el('div', { class: 'mt-head' }, [
         logoEl(t),
         el('button', { class: 'mt-name link-team', onclick: () => onSelectTeam(t.leagueId, t.id) }, [t.name]),
+        el('span', { class: 'spacer' }),
+        sched.length ? el('button', { class: 'mt-ics', title: 'Add schedule to calendar (.ics)', aria: { label: `Add ${t.name} schedule to calendar` }, onclick: (e) => { e.stopPropagation(); downloadTeamICS(t, sched); } }, ['⤓']) : null,
       ]),
       el('div', { class: 'mt-sub' }, [
         t.record ? el('span', { class: 'rec' }, [t.record]) : null,
         t.standingSummary ? el('span', { class: 'muted small' }, [t.standingSummary]) : null,
       ]),
+      formPills(sched, t.id),
       gameLine('Last', c.result.lastGame, t.id, onSelectGame),
       gameLine('Next', c.result.nextGame, t.id, onSelectGame),
     ]));

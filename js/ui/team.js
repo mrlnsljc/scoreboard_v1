@@ -6,7 +6,8 @@
 import { el } from '../util/dom.js';
 import { formatLocalDay, formatLocalTime } from '../util/dates.js';
 import { skeletonView } from './skeleton.js';
-import { emptyState, errorState } from './render.js';
+import { emptyState, errorState, formPills } from './render.js';
+import { downloadTeamICS } from '../util/ics.js';
 
 function backBar(label, onBack) {
   return el('button', { class: 'back-bar', onclick: onBack }, ['‹ ', label]);
@@ -46,6 +47,25 @@ function scheduleRow(game, teamId) {
   ]);
 }
 
+// Advanced/season stats panel (lazy-filled by app.js). `adv` is undefined until
+// it loads, an empty-stats object if ESPN had nothing, else { stats, note }.
+function advancedPanel(adv) {
+  if (!adv) return null;
+  if (!adv.stats.length) {
+    return adv.note
+      ? el('div', { class: 'adv-wrap' }, [el('h3', { class: 'detail-section' }, ['Advanced stats']), el('p', { class: 'muted small' }, [adv.note])])
+      : null;
+  }
+  return el('div', { class: 'adv-wrap' }, [
+    el('h3', { class: 'detail-section' }, ['Advanced stats']),
+    el('div', { class: 'adv-grid' }, adv.stats.map((s) => el('div', { class: 'adv-cell' }, [
+      el('span', { class: 'adv-val' }, [s.value]),
+      el('span', { class: 'adv-label' }, [s.label]),
+    ]))),
+    adv.note ? el('p', { class: 'muted small adv-note' }, [adv.note]) : null,
+  ]);
+}
+
 function rosterCard(p, onSelectPlayer) {
   const head = p.headshot
     ? (() => { const i = el('img', { class: 'rost-head', src: p.headshot, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }); i.addEventListener('error', () => i.replaceWith(el('div', { class: 'rost-head mono' }, [p.name.slice(0, 1)]))); return i; })()
@@ -67,7 +87,7 @@ export function buildTeamView({ result, loading, error, onBack, onSelectPlayer, 
   if (error || !result) { wrap.appendChild(errorState('Couldn’t load team', error?.message || 'Team data was unavailable.', { onRetry })); return wrap; }
 
   const t = result.team;
-  wrap.appendChild(el('div', { class: 'detail-head' }, [
+  wrap.appendChild(el('div', { class: 'detail-head' + (t.color ? ' accented' : ''), style: t.color ? { '--team-accent': t.color } : null }, [
     teamLogo(t),
     el('div', { class: 'detail-head-meta' }, [
       el('h2', {}, [t.name]),
@@ -76,12 +96,22 @@ export function buildTeamView({ result, loading, error, onBack, onSelectPlayer, 
         t.standingSummary ? el('span', { class: 'muted' }, [t.standingSummary]) : null,
       ]),
       (t.recordHome || t.recordRoad) ? el('div', { class: 'muted small' }, [`Home ${t.recordHome || '—'} · Away ${t.recordRoad || '—'}`]) : null,
+      formPills(result.schedule, t.id),
     ]),
     el('button', { class: 'star big' + (isFav ? ' on' : ''), title: isFav ? 'Unfavorite' : 'Favorite', onclick: onToggleFav }, [isFav ? '★' : '☆']),
   ]));
 
-  // schedule
-  wrap.appendChild(el('h3', { class: 'detail-section' }, ['Schedule']));
+  // advanced / season stats (lazy-loaded; appears once it resolves)
+  const adv = advancedPanel(result.advanced);
+  if (adv) wrap.appendChild(adv);
+
+  // schedule (+ one-tap add-to-calendar export)
+  wrap.appendChild(el('div', { class: 'detail-section-row' }, [
+    el('h3', { class: 'detail-section' }, ['Schedule']),
+    result.schedule.length
+      ? el('button', { class: 'btn ghost small ics-btn', title: 'Download an .ics for Google / Apple Calendar', onclick: () => downloadTeamICS(t, result.schedule) }, ['⤓ Add to calendar'])
+      : null,
+  ]));
   if (result.schedule.length) {
     wrap.appendChild(el('div', { class: 'table-wrap' }, [
       el('table', { class: 'sched-table' }, [

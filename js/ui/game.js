@@ -25,6 +25,28 @@ function teamScoreRow(side, isFinal) {
   ]);
 }
 
+// Win-probability bar (only when ESPN provides it and the game isn't pre-game).
+function winProbBar(g) {
+  if (!g.winProb || g.state === 'pre') return null;
+  const homePct = g.winProb.homePct;
+  const tiePct = g.winProb.tiePct > 1 ? g.winProb.tiePct : 0;
+  const awayPct = Math.max(0, 100 - homePct - tiePct);
+  const pct = (n) => `${Math.round(n)}%`;
+  const seg = (cls, w, label) => (w > 0 ? el('div', { class: `wp-seg ${cls}`, style: { width: `${w}%` }, title: `${label} ${pct(w)}` }) : null);
+  return el('div', { class: 'wp-wrap' }, [
+    el('div', { class: 'wp-labels' }, [
+      el('span', { class: 'wp-side' }, [(g.away.abbr || 'Away') + ' ', el('strong', {}, [pct(awayPct)])]),
+      el('span', { class: 'wp-mid muted' }, ['Win probability']),
+      el('span', { class: 'wp-side home' }, [el('strong', {}, [pct(homePct)]), ' ' + (g.home.abbr || 'Home')]),
+    ]),
+    el('div', { class: 'wp-bar' }, [
+      seg('away', awayPct, g.away.abbr || 'Away'),
+      seg('tie', tiePct, 'Tie'),
+      seg('home', homePct, g.home.abbr || 'Home'),
+    ]),
+  ]);
+}
+
 function linescoreTable(g) {
   const n = Math.max(g.away.linescores.length, g.home.linescores.length);
   if (!n) return null;
@@ -107,6 +129,9 @@ export function buildGameView({ result, loading, error, onBack, onSelectPlayer, 
     el('div', { class: 'gh-status' + (result.isLive ? ' live' : '') }, [result.isLive ? el('span', { class: 'live-dot' }) : null, result.status || '']),
     teamScoreRow(result.home, result.isFinal),
   ]));
+
+  const wp = winProbBar(result);
+  if (wp) wrap.appendChild(wp);
 
   const ls = linescoreTable(result);
   if (ls) { wrap.appendChild(el('h3', { class: 'detail-section' }, ['By period'])); wrap.appendChild(ls); }

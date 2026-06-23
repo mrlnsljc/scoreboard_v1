@@ -27,6 +27,15 @@ export function addDays(date, n) {
   return d;
 }
 
+// Parse a native <input type="date"> value ("YYYY-MM-DD") into a LOCAL Date at
+// midnight (new Date('YYYY-MM-DD') would parse as UTC and shift the day).
+export function parseLocalDate(str) {
+  if (!str) return null;
+  const [y, m, d] = String(str).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
 // Local "day bucket" key (YYYY-MM-DD) used to group games by calendar day.
 export function localDayKey(date) {
   const y = date.getFullYear();
