@@ -12,7 +12,7 @@
    Bump CACHE_VERSION to force clients onto new assets.
    ============================================================================= */
 
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const SHELL_CACHE = `sb-shell-${CACHE_VERSION}`;
 const API_CACHE = `sb-api-${CACHE_VERSION}`;
 const IMG_CACHE = `sb-img-${CACHE_VERSION}`;
@@ -33,22 +33,30 @@ const SHELL_ASSETS = [
   './js/data/golf.js',
   './js/data/standings.js',
   './js/data/team.js',
+  './js/data/teamstats.js',
   './js/data/player.js',
   './js/data/game.js',
   './js/data/leaders.js',
+  './js/data/racing.js',
+  './js/data/bracket.js',
   './js/data/playersearch.js',
   './js/data/thesportsdb.js',
   './js/data/logos.js',
   './js/store/store.js',
   './js/store/settings.js',
   './js/store/favorites.js',
+  './js/util/ics.js',
   './js/auth/firebase.js',
   './js/ui/skeleton.js',
   './js/ui/render.js',
   './js/ui/views.js',
   './js/ui/search.js',
+  './js/ui/leaguePicker.js',
   './js/ui/golf.js',
   './js/ui/standings.js',
+  './js/ui/racing.js',
+  './js/ui/bracket.js',
+  './js/ui/calendar.js',
   './js/ui/team.js',
   './js/ui/player.js',
   './js/ui/game.js',

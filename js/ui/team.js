@@ -8,6 +8,8 @@ import { formatLocalDay, formatLocalTime } from '../util/dates.js';
 import { skeletonView } from './skeleton.js';
 import { emptyState, errorState, formPills } from './render.js';
 import { downloadTeamICS } from '../util/ics.js';
+import { buildCalendarView } from './calendar.js';
+import { startOfMonth, endOfMonth } from '../util/dates.js';
 
 function backBar(label, onBack) {
   return el('button', { class: 'back-bar', onclick: onBack }, ['‹ ', label]);
@@ -79,7 +81,7 @@ function rosterCard(p, onSelectPlayer) {
   ]);
 }
 
-export function buildTeamView({ result, loading, error, onBack, onSelectPlayer, onToggleFav, isFav, onRetry }) {
+export function buildTeamView({ result, loading, error, schedView = 'table', calMonth, onSetSchedView, onTeamCalPrev, onTeamCalNext, onSelectGame, onBack, onSelectPlayer, onToggleFav, isFav, onRetry }) {
   const wrap = el('div', { class: 'detail-view' });
   wrap.appendChild(backBar('Standings', onBack));
 
@@ -105,22 +107,33 @@ export function buildTeamView({ result, loading, error, onBack, onSelectPlayer, 
   const adv = advancedPanel(result.advanced);
   if (adv) wrap.appendChild(adv);
 
-  // schedule (+ one-tap add-to-calendar export)
+  // schedule: list or month-calendar, + one-tap .ics export
+  const seg = (id, label) => el('button', { class: 'seg' + (schedView === id ? ' active' : ''), onclick: () => onSetSchedView && onSetSchedView(id) }, [label]);
   wrap.appendChild(el('div', { class: 'detail-section-row' }, [
     el('h3', { class: 'detail-section' }, ['Schedule']),
-    result.schedule.length
-      ? el('button', { class: 'btn ghost small ics-btn', title: 'Download an .ics for Google / Apple Calendar', onclick: () => downloadTeamICS(t, result.schedule) }, ['⤓ Add to calendar'])
-      : null,
+    el('div', { class: 'sched-actions' }, [
+      result.schedule.length ? el('div', { class: 'seg-toggle' }, [seg('table', 'List'), seg('calendar', 'Calendar')]) : null,
+      result.schedule.length ? el('button', { class: 'btn ghost small ics-btn', title: 'Download an .ics for Google / Apple Calendar', onclick: () => downloadTeamICS(t, result.schedule) }, ['⤓ Add to calendar']) : null,
+    ]),
   ]));
-  if (result.schedule.length) {
+  if (!result.schedule.length) {
+    wrap.appendChild(el('p', { class: 'muted small' }, ['No schedule available.']));
+  } else if (schedView === 'calendar') {
+    const month = calMonth || startOfMonth(new Date());
+    const lo = startOfMonth(month).getTime();
+    const hi = endOfMonth(month).getTime() + 86400000;
+    const monthGames = result.schedule.filter((g) => Number.isFinite(g.startMs) && g.startMs >= lo && g.startMs < hi);
+    wrap.appendChild(buildCalendarView({
+      monthDate: month, games: monthGames, teamId: t.id,
+      onPrev: onTeamCalPrev, onNext: onTeamCalNext, onSelectGame,
+    }));
+  } else {
     wrap.appendChild(el('div', { class: 'table-wrap' }, [
       el('table', { class: 'sched-table' }, [
         el('thead', {}, [el('tr', {}, [el('th', {}, ['Date']), el('th', {}, ['Matchup']), el('th', { class: 'c-result' }, ['Result'])])]),
         el('tbody', {}, result.schedule.map((g) => scheduleRow(g, t.id))),
       ]),
     ]));
-  } else {
-    wrap.appendChild(el('p', { class: 'muted small' }, ['No schedule available.']));
   }
 
   // roster

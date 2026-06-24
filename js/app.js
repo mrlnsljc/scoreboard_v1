@@ -19,6 +19,11 @@ import { openSearch } from './ui/search.js';
 import { buildStandingsView, buildLeadersExpandModal } from './ui/standings.js';
 import { leaguePicker } from './ui/leaguePicker.js';
 import { buildGolfArchive } from './ui/golf.js';
+import { fetchRacing } from './data/racing.js';
+import { buildRacingView } from './ui/racing.js';
+import { fetchBracket } from './data/bracket.js';
+import { buildBracketView } from './ui/bracket.js';
+import { buildCalendarView } from './ui/calendar.js';
 import { buildTeamView } from './ui/team.js';
 // (golf is now part of the Standings page; the old standalone Golf tab was removed)
 import { buildPlayerView } from './ui/player.js';
@@ -35,7 +40,7 @@ import {
   hasAnyFavorites, onFavoritesChange,
 } from './store/favorites.js';
 import { el, $, mount } from './util/dom.js';
-import { timeAgo, yyyymmdd, yyyymmddRange, addDays, isSameLocalDay, relativeDayLabel, formatLocalDay, localDayKey, parseLocalDate } from './util/dates.js';
+import { timeAgo, yyyymmdd, yyyymmddRange, addDays, isSameLocalDay, relativeDayLabel, formatLocalDay, localDayKey, parseLocalDate, startOfMonth, endOfMonth, addMonths } from './util/dates.js';
 import { skeletonView } from './ui/skeleton.js';
 import { buildTodayView, buildUpcomingView } from './ui/views.js';
 import { errorState } from './ui/render.js';
@@ -52,11 +57,15 @@ const state = {
   // standings view (mode = teams | leaders; selectedId 'golf' shows the golf archive)
   standings: { selectedId: null, season: null, mode: 'teams', scope: 'grouped', leadersAllTime: false, result: null, leaders: null, loading: false, leadersLoading: false, error: null, sortIndex: null, sortDir: 'desc' },
   golfArchive: { years: [], byMajor: {} }, // byMajor[label] = { year, leaderboard, loading, error }
+  racing: { result: null, loading: false, error: null }, // F1 (under Standings, like golf)
+  bracket: { result: null, loading: false, error: null, leagueId: null }, // playoff/knockout bracket
+  calendar: { monthDate: startOfMonth(new Date()), leagueId: null, games: [], loading: false, error: null }, // month grid
   myteams: { byKey: new Map() },           // favKey -> { result, loading, error }
   // team/player/game drill-down (overlays the active tab when type !== null)
   detail: { type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null },
   detailStack: [],
   gameTimer: null, // live refresh for an open in-progress game page
+  ticker: { picks: [], timer: null }, // header live ticker for favorite teams
   user: null, // signed-in Firebase user (null = signed out / not configured)
 };
 
@@ -189,11 +198,100 @@ function scheduleLiveRefresh() {
   }, APP_CONFIG.liveRefreshMs);
 }
 
+// ---- header live ticker -----------------------------------------------------
+// A thin, always-visible strip of the user's favorite teams' games (live first,
+// then next up, then most-recent final). Self-contained: it fetches a short
+// forward window of each favorite league's scoreboard (cached, cheap) and
+// re-polls every ~30s while any favorite is live. Independent of the active tab.
+function pickTickerGame(games) {
+  if (!games.length) return null;
+  const live = games.filter((g) => g.isLive).sort((a, b) => (a.startMs || 0) - (b.startMs || 0));
+  if (live.length) return live[0];
+  const now = Date.now();
+  const upcoming = games.filter((g) => !g.isFinal && Number.isFinite(g.startMs) && g.startMs >= now - 3 * 3600 * 1000)
+    .sort((a, b) => a.startMs - b.startMs);
+  if (upcoming.length) return upcoming[0];
+  const finals = games.filter((g) => g.isFinal).sort((a, b) => (a.startMs || 0) - (b.startMs || 0));
+  return finals[finals.length - 1] || null;
+}
+
+async function loadTicker() {
+  const favs = favoriteTeamList();
+  if (!favs.length) { state.ticker.picks = []; clearTimeout(state.ticker.timer); renderTicker(); return; }
+  const leagues = [...new Set(favs.map((f) => f.leagueId))].map(getLeague).filter(Boolean);
+  const start = new Date();
+  const end = addDays(start, 7);
+  const results = await Promise.allSettled(leagues.map((lg) => fetchScoreboard(lg, yyyymmddRange(start, end))));
+  const games = [];
+  results.forEach((r) => { if (r.status === 'fulfilled') games.push(...r.value.games); });
+  const picks = [];
+  for (const f of favs) {
+    const mine = games.filter((g) => g.home.favKey === f.favKey || g.away.favKey === f.favKey);
+    const g = pickTickerGame(mine);
+    if (g) picks.push({ fav: f, game: g });
+  }
+  // live first, then soonest upcoming, then finals
+  const phase = (g) => (g.isLive ? 0 : g.isPre ? 1 : 2);
+  picks.sort((a, b) => phase(a.game) - phase(b.game) || (a.game.startMs || 0) - (b.game.startMs || 0));
+  state.ticker.picks = picks;
+  renderTicker();
+  scheduleTickerRefresh();
+}
+
+function scheduleTickerRefresh() {
+  clearTimeout(state.ticker.timer);
+  state.ticker.timer = null;
+  if (!state.ticker.picks.some((p) => p.game.isLive)) return; // only poll while live
+  state.ticker.timer = setTimeout(loadTicker, APP_CONFIG.liveRefreshMs);
+}
+
+function tickerChip({ fav, game }) {
+  const meHome = game.home.favKey === fav.favKey;
+  const me = meHome ? game.home : game.away;
+  const opp = meHome ? game.away : game.home;
+  let score = '';
+  if (game.isLive) score = `${me.score}-${opp.score}`;
+  else if (game.isFinal) score = `${game.isDraw ? 'D' : me.winner ? 'W' : 'L'} ${me.score}-${opp.score}`;
+  else score = Number.isFinite(game.startMs) ? formatLocalTime(new Date(game.startMs)) : '';
+
+  const logo = (me.logo || fav.logo)
+    ? (() => { const i = el('img', { class: 'tk-logo', src: me.logo || fav.logo, alt: '', referrerpolicy: 'no-referrer' }); i.addEventListener('error', () => i.remove()); return i; })()
+    : null;
+  return el('button', {
+    class: 'ticker-chip' + (game.isLive ? ' live' : '') + (game.isFinal ? ' final' : ''),
+    title: `${me.displayName} ${meHome ? 'vs' : '@'} ${opp.displayName}`,
+    onclick: () => openGame(game),
+  }, [
+    logo,
+    el('span', { class: 'tk-abbr' }, [me.abbr || me.displayName]),
+    el('span', { class: 'tk-vs muted' }, [meHome ? 'vs' : '@']),
+    el('span', { class: 'tk-abbr' }, [opp.abbr || opp.displayName]),
+    game.isLive ? el('span', { class: 'live-dot' }) : null,
+    el('span', { class: 'tk-score' }, [score]),
+  ]);
+}
+
+function renderTicker() {
+  const bar = $('#ticker');
+  if (!bar) return;
+  const picks = state.ticker.picks;
+  if (!picks.length) { bar.style.display = 'none'; bar.replaceChildren(); return; }
+  bar.style.display = '';
+  mount(bar, el('div', { class: 'ticker-track' }, [
+    el('span', { class: 'tk-label', aria: { hidden: 'true' } }, ['★']),
+    ...picks.map(tickerChip),
+  ]));
+}
+
 // ---- standings --------------------------------------------------------------
 // Every configured league supports standings (they're all ESPN team sports);
 // plus a Golf entry that shows the majors archive (major -> year).
 const GOLF_OPTION = { id: 'golf', name: '⛳ Golf — Majors' };
-function standingsLeagues() { return [...LEAGUES, GOLF_OPTION]; }
+// F1 is a non-team sport, so (like golf) it's a special Standings entry with its
+// own data path, not a row in the LEAGUES registry. sport/league let the picker
+// resolve its logo via leagueLogoUrl().
+const F1_OPTION = { id: 'f1', name: 'F1 — Motorsport', sport: 'racing', league: 'f1' };
+function standingsLeagues() { return [...LEAGUES, GOLF_OPTION, F1_OPTION]; }
 
 async function loadStandings(force = false) {
   const st = state.standings;
@@ -226,11 +324,15 @@ function selectStandingsLeague(id) {
   const st = state.standings;
   st.selectedId = id;
   if (id === 'golf') { loadGolfArchive(); render(); return; }
+  if (id === 'f1') { loadRacing(); render(); return; }
   st.season = null;   // reset to current season when switching leagues
   st.result = null;   // drop the previous league's team table
   st.leaders = null;  // leaders are per-league
   st.sortIndex = null; st.sortDir = 'desc'; // back to the league's default sort
-  if (st.mode === 'leaders') loadLeaders(); else loadStandingsLeague(id, { skeleton: true });
+  if (st.mode === 'leaders') loadLeaders();
+  else if (st.mode === 'bracket') { state.bracket.result = null; state.bracket.leagueId = null; loadBracket(); }
+  else if (st.mode === 'calendar') { state.calendar.games = []; state.calendar.leagueId = null; loadCalendarMonth(true); }
+  else loadStandingsLeague(id, { skeleton: true });
 }
 
 // ---- golf archive (under Standings): major -> year ----
@@ -261,6 +363,65 @@ async function loadMajorYear(label, year) {
 }
 
 function selectGolfYear(label, year) { loadMajorYear(label, year); }
+
+// ---- F1 / motorsport (under Standings, like golf) ----
+async function loadRacing() {
+  const rc = state.racing;
+  rc.loading = !rc.result;
+  rc.error = null;
+  const onF1 = () => getSettings().view === 'standings' && state.standings.selectedId === 'f1';
+  if (onF1()) render();
+  try { rc.result = await fetchRacing(F1_OPTION); }
+  catch (e) { rc.error = e; rc.result = null; }
+  rc.loading = false;
+  if (onF1()) render();
+}
+
+// ---- month calendar (a Standings mode) ----
+async function loadCalendarMonth(force = false) {
+  const st = state.standings;
+  const league = getLeague(st.selectedId);
+  if (!league) return; // golf/f1 have no month grid
+  const cal = state.calendar;
+  const sameMonth = cal.leagueId === league.id && isSameLocalDay(cal.loadedMonth || new Date(0), cal.monthDate);
+  if (cal.games.length && sameMonth && !force && !cal.error) return;
+  cal.loading = true; cal.error = null; cal.leagueId = league.id;
+  const onCal = () => getSettings().view === 'standings' && state.standings.mode === 'calendar';
+  if (onCal()) render();
+  try {
+    const r = await fetchScoreboard(league, yyyymmddRange(startOfMonth(cal.monthDate), endOfMonth(cal.monthDate)));
+    cal.games = r.games; cal.loadedMonth = new Date(cal.monthDate);
+  } catch (e) { cal.error = e; cal.games = []; }
+  cal.loading = false;
+  if (onCal()) render();
+}
+
+function calendarStep(n) {
+  state.calendar.monthDate = addMonths(state.calendar.monthDate, n);
+  state.calendar.games = [];
+  loadCalendarMonth(true);
+}
+function calendarThisMonth() {
+  state.calendar.monthDate = startOfMonth(new Date());
+  state.calendar.games = [];
+  loadCalendarMonth(true);
+}
+
+// ---- playoff / knockout bracket (a third Standings mode) ----
+async function loadBracket() {
+  const st = state.standings;
+  const league = getLeague(st.selectedId);
+  if (!league) return; // golf/f1 have no bracket
+  const b = state.bracket;
+  if (b.result && b.leagueId === league.id && !b.error) return; // already loaded for this league
+  b.loading = true; b.error = null; b.leagueId = league.id;
+  const onBracket = () => getSettings().view === 'standings' && state.standings.mode === 'bracket';
+  if (onBracket()) render();
+  try { b.result = await fetchBracket(league); }
+  catch (e) { b.error = e; b.result = null; }
+  b.loading = false;
+  if (onBracket()) render();
+}
 
 function sortStandings(i) {
   const st = state.standings;
@@ -314,6 +475,8 @@ function setStandingsMode(mode) {
   st.mode = mode;
   render();
   if (mode === 'leaders' && !st.leaders) loadLeaders();
+  else if (mode === 'bracket') loadBracket();
+  else if (mode === 'calendar') loadCalendarMonth();
   else if (mode === 'teams' && !st.result) loadStandingsLeague(st.selectedId, { skeleton: true });
 }
 
@@ -343,7 +506,11 @@ async function loadLeaders() {
 // ---- team / player / game drill-down (with a back-stack) --------------------
 // state.detail = current page; state.detailStack = pages to return to. A page
 // keeps its loaded `result` so going Back is instant (no refetch).
-const blankDetail = () => ({ type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null });
+const blankDetail = () => ({ type: null, league: null, teamId: null, athleteId: null, gameId: null, result: null, loading: false, error: null, schedView: 'table', calMonth: startOfMonth(new Date()) });
+
+// Team page: toggle its schedule between a list and a month calendar, + step months.
+function setTeamSchedView(v) { if (state.detail.type === 'team') { state.detail.schedView = v; render(); } }
+function teamCalStep(n) { if (state.detail.type === 'team') { state.detail.calMonth = addMonths(state.detail.calMonth, n); render(); } }
 
 function pushDetail(next) {
   clearTimeout(state.gameTimer); state.gameTimer = null;
@@ -366,8 +533,8 @@ function openTeam(leagueId, teamId) {
 // fills in once the team page has already painted.
 function loadTeamAdvanced(league, teamId) {
   fetchTeamAdvancedStats(league, teamId)
-    .then((adv) => { console.log('[adv]', { teamId, cur: isCurrent('team', 'teamId', teamId), hasResult: !!state.detail.result, stats: adv && adv.stats.length }); if (isCurrent('team', 'teamId', teamId) && state.detail.result) { state.detail.result.advanced = adv; render(); } })
-    .catch((e) => { console.warn('[adv] err', e); });
+    .then((adv) => { if (isCurrent('team', 'teamId', teamId) && state.detail.result) { state.detail.result.advanced = adv; render(); } })
+    .catch(() => { /* panel just stays hidden */ });
 }
 
 function openPlayer(league, athleteId) {
@@ -555,6 +722,9 @@ function render() {
     const d = state.detail;
     mount(content, buildTeamView({
       result: d.result, loading: d.loading, error: d.error,
+      schedView: d.schedView, calMonth: d.calMonth,
+      onSetSchedView: setTeamSchedView, onTeamCalPrev: () => teamCalStep(-1), onTeamCalNext: () => teamCalStep(1),
+      onSelectGame: (game) => openGame(game),
       onBack: backFromDetail,
       onSelectPlayer: (athleteId) => openPlayer(d.league, athleteId),
       onToggleFav: toggleDetailTeamFav,
@@ -620,6 +790,19 @@ function render() {
       return;
     }
 
+    // F1 / motorsport (selected via the league dropdown)
+    if (st.selectedId === 'f1') {
+      const leagueSelect = el('div', { class: 'standings-bar' }, [
+        el('span', { class: 'small muted' }, ['League']),
+        leaguePicker({ leagues: standingsLeagues(), selectedId: 'f1', onSelect: selectStandingsLeague }),
+      ]);
+      mount(content, buildRacingView({
+        leagueSelect, result: state.racing.result, loading: state.racing.loading, error: state.racing.error, onRetry: loadRacing,
+      }));
+      renderStatusBar(s, null);
+      return;
+    }
+
     mount(content, buildStandingsView({
       leagues: standingsLeagues(),
       selectedId: st.selectedId,
@@ -635,6 +818,16 @@ function render() {
       seasons: st.result?.seasons,
       activeSeason: st.season ?? st.result?.season,
       leadersAllTime: st.leadersAllTime,
+      bracketNode: st.mode === 'bracket' ? buildBracketView({
+        result: state.bracket.result, loading: state.bracket.loading, error: state.bracket.error,
+        onSelectGame: (game) => openGame(game),
+        onRetry: () => { state.bracket.result = null; state.bracket.leagueId = null; loadBracket(); },
+      }) : null,
+      calendarNode: st.mode === 'calendar' ? buildCalendarView({
+        monthDate: state.calendar.monthDate, games: state.calendar.games, loading: state.calendar.loading,
+        onPrev: () => calendarStep(-1), onNext: () => calendarStep(1), onToday: calendarThisMonth,
+        onSelectGame: (game) => openGame(game),
+      }) : null,
       onSelectLeague: selectStandingsLeague,
       onSelectSeason: selectStandingsSeason,
       onSelectTeam: (teamId) => openTeam(st.selectedId, teamId),
@@ -794,6 +987,7 @@ async function onToggleTeam(side) {
 function afterFavoritesChanged() {
   render();
   refreshCurrentView({ showSkeleton: false });
+  loadTicker();
 }
 
 // ---- account / cloud sync (Firebase) ---------------------------------------
@@ -986,7 +1180,7 @@ async function doInstall() {
 }
 
 // ---- boot -------------------------------------------------------------------
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 async function boot() {
   await loadSettings();
@@ -1011,6 +1205,9 @@ async function boot() {
   else if (bootView === 'standings') loadStandings();
   else loadView(bootView, { showSkeleton: true });
 
+  // Favorites live ticker — load independently of the active tab so it's always current.
+  loadTicker();
+
   // Pre-warm the search team index in the background so the first 🔍 search is
   // instant. Deferred to idle so it doesn't compete with the initial scores
   // fetch, and persisted for a day so it doesn't re-harvest on every launch.
@@ -1020,9 +1217,9 @@ async function boot() {
 
   // refresh on regaining focus / connectivity (cheap correctness wins)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') refreshCurrentView({ showSkeleton: false });
+    if (document.visibilityState === 'visible') { refreshCurrentView({ showSkeleton: false }); loadTicker(); }
   });
-  window.addEventListener('online', () => { render(); refreshCurrentView({ showSkeleton: false }); });
+  window.addEventListener('online', () => { render(); refreshCurrentView({ showSkeleton: false }); loadTicker(); });
   window.addEventListener('offline', () => render());
 
   // keep "updated Xs ago" honest

@@ -58,7 +58,7 @@ function groupTable(group, columns, onSelectTeam, sortIndex, sortDir, onSort) {
 
 function modeToggle(mode, onSetMode) {
   const mk = (id, label) => el('button', { class: 'seg' + (mode === id ? ' active' : ''), onclick: () => onSetMode(id) }, [label]);
-  return el('div', { class: 'seg-toggle' }, [mk('teams', 'Teams'), mk('leaders', 'Leaders')]);
+  return el('div', { class: 'seg-toggle' }, [mk('teams', 'Teams'), mk('leaders', 'Leaders'), mk('bracket', 'Bracket'), mk('calendar', 'Calendar')]);
 }
 
 function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry) {
@@ -99,7 +99,7 @@ function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, on
   return wrap;
 }
 
-export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope = 'grouped', result, leaders, loading, leadersLoading, error, sortIndex, sortDir = 'desc', seasons, activeSeason, leadersAllTime, onSelectLeague, onSelectSeason, onSelectTeam, onSelectPlayer, onSetMode, onSetAllTime, onSetScope, onExpandCategory, onSort, onRetry }) {
+export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope = 'grouped', result, leaders, loading, leadersLoading, error, sortIndex, sortDir = 'desc', seasons, activeSeason, leadersAllTime, bracketNode, calendarNode, onSelectLeague, onSelectSeason, onSelectTeam, onSelectPlayer, onSetMode, onSetAllTime, onSetScope, onExpandCategory, onSort, onRetry }) {
   const wrap = el('div', { class: 'standings-view' });
 
   // league picker (custom control so each league shows its logo)
@@ -108,6 +108,18 @@ export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope 
     leaguePicker({ leagues, selectedId, onSelect: onSelectLeague }),
     modeToggle(mode, onSetMode),
   ]);
+
+  // ---- bracket / calendar modes (own data paths; node built by app.js) ----
+  if (mode === 'bracket') {
+    wrap.appendChild(bar);
+    wrap.appendChild(bracketNode || skeletonView(1));
+    return wrap;
+  }
+  if (mode === 'calendar') {
+    wrap.appendChild(bar);
+    wrap.appendChild(calendarNode || skeletonView(1));
+    return wrap;
+  }
 
   // season picker — shown in teams mode, and in leaders mode unless All-time.
   const seasonList = seasons || result?.seasons || [];

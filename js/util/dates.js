@@ -27,6 +27,11 @@ export function addDays(date, n) {
   return d;
 }
 
+// Month helpers for the calendar view (all local-time).
+export function startOfMonth(date) { return new Date(date.getFullYear(), date.getMonth(), 1); }
+export function endOfMonth(date) { return new Date(date.getFullYear(), date.getMonth() + 1, 0); }
+export function addMonths(date, n) { return new Date(date.getFullYear(), date.getMonth() + n, 1); }
+
 // Parse a native <input type="date"> value ("YYYY-MM-DD") into a LOCAL Date at
 // midnight (new Date('YYYY-MM-DD') would parse as UTC and shift the day).
 export function parseLocalDate(str) {
