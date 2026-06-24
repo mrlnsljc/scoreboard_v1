@@ -613,10 +613,11 @@ html[data-theme="dark"] .date-input::-webkit-calendar-picker-indicator { filter:
 .wp-seg.tie { background: var(--muted-2); }
 
 /* ---- advanced / season stats panel ---------------------------------------- */
-.adv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-.adv-cell { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; display: flex; flex-direction: column; gap: 3px; }
-.adv-val { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.3px; }
-.adv-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+.adv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 10px; }
+.adv-cell { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; display: flex; flex-direction: column; gap: 2px; }
+.adv-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; font-weight: 700; }
+.adv-val { font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.3px; line-height: 1.1; }
+.adv-desc { font-size: 11px; color: var(--muted-2); line-height: 1.3; margin-top: 1px; }
 .adv-note { margin-top: 8px; }
 
 /* ---- header live ticker (favorites) --------------------------------------- */
@@ -655,6 +656,7 @@ html[data-theme="dark"] .date-input::-webkit-calendar-picker-indicator { filter:
 .racing-view .std-table .c-team { display: flex; align-items: center; }
 
 /* ---- bracket (playoffs / knockouts) --------------------------------------- */
+.bk-seasonbar { display: flex; align-items: center; gap: 8px; margin: 12px 0 4px; }
 .bk-scroller { display: flex; gap: 16px; overflow-x: auto; padding: 8px 2px 14px; }
 .bk-round { flex: none; width: 210px; display: flex; flex-direction: column; gap: 10px; }
 .bk-round-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 700; }

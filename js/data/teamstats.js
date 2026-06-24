@@ -18,34 +18,55 @@ const CORE = 'https://sports.core.api.espn.com/v2/sports';
 
 // [statName, label, category?] — category disambiguates name collisions
 // (e.g. MLB `homeRuns`/`strikeouts` exist in both batting and pitching).
+// Each pick: { n: statName, label: header, desc: plain-English meaning, cat?: category
+// to disambiguate name collisions (e.g. MLB homeRuns/strikeouts exist in batting & pitching) }.
 const PICKS = {
   basketball: [
-    ['avgPoints', 'Points / Game'], ['paceFactor', 'Pace'],
-    ['pointsPerEstimatedPossessions', 'Points / Poss.'], ['shootingEfficiency', 'Shooting Eff.'],
-    ['pointsInPaint', 'Points in Paint'], ['fastBreakPoints', 'Fast-Break Pts'],
+    { n: 'avgPoints', label: 'Points / Game', desc: 'Average points scored per game' },
+    { n: 'paceFactor', label: 'Pace', desc: 'Possessions per 48 minutes' },
+    { n: 'pointsPerEstimatedPossessions', label: 'Points / Possession', desc: 'Offensive efficiency (≈ offensive rating ÷ 100)' },
+    { n: 'shootingEfficiency', label: 'Shooting Efficiency', desc: 'Points produced per shot taken' },
+    { n: 'pointsInPaint', label: 'Points in Paint', desc: 'Total points scored near the basket' },
+    { n: 'fastBreakPoints', label: 'Fast-Break Points', desc: 'Total points off transition / fast breaks' },
   ],
   hockey: [
-    ['avgGoals', 'Goals / Game', 'offensive'], ['avgGoalsAgainst', 'Goals Against / Game', 'defensive'],
-    ['goalDifferential', 'Goal Differential', 'general'], ['powerPlayPct', 'Power Play %', 'offensive'],
-    ['penaltyKillPct', 'Penalty Kill %', 'defensive'], ['avgShots', 'Shots / Game', 'offensive'],
-    ['faceoffPercent', 'Faceoff %', 'offensive'], ['savePct', 'Save %', 'defensive'],
+    { n: 'avgGoals', label: 'Goals / Game', desc: 'Average goals scored per game', cat: 'offensive' },
+    { n: 'avgGoalsAgainst', label: 'Goals Against / Game', desc: 'Average goals allowed per game', cat: 'defensive' },
+    { n: 'goalDifferential', label: 'Goal Differential', desc: 'Goals scored minus goals allowed', cat: 'general' },
+    { n: 'powerPlayPct', label: 'Power Play %', desc: 'Share of power plays that produce a goal', cat: 'offensive' },
+    { n: 'penaltyKillPct', label: 'Penalty Kill %', desc: 'Share of penalties killed without allowing a goal', cat: 'defensive' },
+    { n: 'avgShots', label: 'Shots / Game', desc: 'Average shots on goal per game', cat: 'offensive' },
+    { n: 'faceoffPercent', label: 'Faceoff %', desc: 'Share of faceoffs won', cat: 'offensive' },
+    { n: 'savePct', label: 'Save %', desc: 'Share of shots faced that were saved', cat: 'defensive' },
   ],
   football: [
-    ['totalPointsPerGame', 'Points / Game', 'passing'], ['yardsPerGame', 'Total Yards / Game', 'passing'],
-    ['passingYardsPerGame', 'Pass Yards / Game', 'passing'], ['rushingYardsPerGame', 'Rush Yards / Game', 'rushing'],
-    ['completionPct', 'Completion %', 'passing'], ['yardsPerRushAttempt', 'Yards / Rush', 'rushing'],
-    ['QBRating', 'Passer Rating', 'passing'],
+    { n: 'totalPointsPerGame', label: 'Points / Game', desc: 'Average points scored per game', cat: 'passing' },
+    { n: 'yardsPerGame', label: 'Total Yards / Game', desc: 'Average total offensive yards per game', cat: 'passing' },
+    { n: 'passingYardsPerGame', label: 'Pass Yards / Game', desc: 'Average passing yards per game', cat: 'passing' },
+    { n: 'rushingYardsPerGame', label: 'Rush Yards / Game', desc: 'Average rushing yards per game', cat: 'rushing' },
+    { n: 'completionPct', label: 'Completion %', desc: 'Share of pass attempts completed', cat: 'passing' },
+    { n: 'yardsPerRushAttempt', label: 'Yards / Rush', desc: 'Average yards gained per rushing attempt', cat: 'rushing' },
+    { n: 'QBRating', label: 'Passer Rating', desc: 'NFL passer rating (0–158.3 scale)', cat: 'passing' },
   ],
   baseball: [
-    ['avg', 'Batting AVG', 'batting'], ['onBasePct', 'OBP', 'batting'], ['slugAvg', 'SLG', 'batting'],
-    ['OPS', 'OPS', 'batting'], ['homeRuns', 'Home Runs', 'batting'], ['runs', 'Runs', 'batting'],
-    ['ERA', 'Team ERA', 'pitching'], ['WHIP', 'WHIP', 'pitching'],
+    { n: 'avg', label: 'Batting Average', desc: 'Hits per at-bat (AVG)', cat: 'batting' },
+    { n: 'onBasePct', label: 'On-Base %', desc: 'How often a batter reaches base (OBP)', cat: 'batting' },
+    { n: 'slugAvg', label: 'Slugging %', desc: 'Total bases per at-bat (SLG)', cat: 'batting' },
+    { n: 'OPS', label: 'OPS', desc: 'On-base plus slugging', cat: 'batting' },
+    { n: 'homeRuns', label: 'Home Runs', desc: 'Total home runs hit', cat: 'batting' },
+    { n: 'runs', label: 'Runs', desc: 'Total runs scored', cat: 'batting' },
+    { n: 'ERA', label: 'Team ERA', desc: 'Earned runs allowed per 9 innings', cat: 'pitching' },
+    { n: 'WHIP', label: 'WHIP', desc: 'Walks + hits allowed per inning pitched', cat: 'pitching' },
   ],
   soccer: [
-    ['totalGoals', 'Goals', 'offensive'], ['avgGoals', 'Goals / Game', 'offensive'],
-    ['totalShots', 'Shots', 'offensive'], ['shotsOnTarget', 'Shots on Target', 'offensive'],
-    ['possessionPct', 'Possession %', 'offensive'], ['goalConversion', 'Goal Conversion %', 'offensive'],
-    ['goalsConceded', 'Goals Conceded', 'goalKeeping'], ['cleanSheet', 'Clean Sheets', 'goalKeeping'],
+    { n: 'totalGoals', label: 'Goals', desc: 'Total goals scored this season', cat: 'offensive' },
+    { n: 'avgGoals', label: 'Goals / Game', desc: 'Average goals scored per match', cat: 'offensive' },
+    { n: 'totalShots', label: 'Shots', desc: 'Total shots taken this season', cat: 'offensive' },
+    { n: 'shotsOnTarget', label: 'Shots on Target', desc: 'Shots that were on goal', cat: 'offensive' },
+    { n: 'possessionPct', label: 'Possession %', desc: 'Average share of ball possession', cat: 'offensive' },
+    { n: 'goalConversion', label: 'Goal Conversion %', desc: 'Share of shots that became goals', cat: 'offensive' },
+    { n: 'goalsConceded', label: 'Goals Conceded', desc: 'Total goals allowed this season', cat: 'goalKeeping' },
+    { n: 'cleanSheet', label: 'Clean Sheets', desc: 'Matches without conceding a goal', cat: 'goalKeeping' },
   ],
 };
 
@@ -64,9 +85,9 @@ function readStats(data, picks) {
     }
   }
   const out = [];
-  for (const [name, label, cat] of picks) {
-    const v = cat ? (byCat[cat] || {})[name] : anyCat[name];
-    if (v != null && v !== '') out.push({ label, value: String(v) });
+  for (const p of picks) {
+    const v = p.cat ? (byCat[p.cat] || {})[p.n] : anyCat[p.n];
+    if (v != null && v !== '') out.push({ label: p.label, value: String(v), desc: p.desc || '' });
   }
   return out;
 }

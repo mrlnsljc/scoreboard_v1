@@ -21,7 +21,7 @@ import { leaguePicker } from './ui/leaguePicker.js';
 import { buildGolfArchive } from './ui/golf.js';
 import { fetchRacing } from './data/racing.js';
 import { buildRacingView } from './ui/racing.js';
-import { fetchBracket } from './data/bracket.js';
+import { fetchBracket, defaultBracketSeason } from './data/bracket.js';
 import { buildBracketView } from './ui/bracket.js';
 import { buildCalendarView } from './ui/calendar.js';
 import { buildTeamView } from './ui/team.js';
@@ -58,7 +58,7 @@ const state = {
   standings: { selectedId: null, season: null, mode: 'teams', scope: 'grouped', leadersAllTime: false, result: null, leaders: null, loading: false, leadersLoading: false, error: null, sortIndex: null, sortDir: 'desc' },
   golfArchive: { years: [], byMajor: {} }, // byMajor[label] = { year, leaderboard, loading, error }
   racing: { result: null, loading: false, error: null }, // F1 (under Standings, like golf)
-  bracket: { result: null, loading: false, error: null, leagueId: null }, // playoff/knockout bracket
+  bracket: { result: null, loading: false, error: null, leagueId: null, season: null, loadedSeason: null }, // playoff/knockout bracket
   calendar: { monthDate: startOfMonth(new Date()), leagueId: null, games: [], loading: false, error: null }, // month grid
   myteams: { byKey: new Map() },           // favKey -> { result, loading, error }
   // team/player/game drill-down (overlays the active tab when type !== null)
@@ -330,7 +330,7 @@ function selectStandingsLeague(id) {
   st.leaders = null;  // leaders are per-league
   st.sortIndex = null; st.sortDir = 'desc'; // back to the league's default sort
   if (st.mode === 'leaders') loadLeaders();
-  else if (st.mode === 'bracket') { state.bracket.result = null; state.bracket.leagueId = null; loadBracket(); }
+  else if (st.mode === 'bracket') { state.bracket.result = null; state.bracket.leagueId = null; state.bracket.season = null; loadBracket(); }
   else if (st.mode === 'calendar') { state.calendar.games = []; state.calendar.leagueId = null; loadCalendarMonth(true); }
   else loadStandingsLeague(id, { skeleton: true });
 }
@@ -413,14 +413,27 @@ async function loadBracket() {
   const league = getLeague(st.selectedId);
   if (!league) return; // golf/f1 have no bracket
   const b = state.bracket;
-  if (b.result && b.leagueId === league.id && !b.error) return; // already loaded for this league
+  if (b.season == null) b.season = defaultBracketSeason(league.sport);
+  if (b.result && b.leagueId === league.id && b.loadedSeason === b.season && !b.error) return; // cached for this league+season
   b.loading = true; b.error = null; b.leagueId = league.id;
   const onBracket = () => getSettings().view === 'standings' && state.standings.mode === 'bracket';
   if (onBracket()) render();
-  try { b.result = await fetchBracket(league); }
+  try { b.result = await fetchBracket(league, b.season); b.loadedSeason = b.season; b.season = b.result.season; }
   catch (e) { b.error = e; b.result = null; }
   b.loading = false;
   if (onBracket()) render();
+}
+
+function selectBracketSeason(year) {
+  state.bracket.season = year;
+  state.bracket.result = null;
+  loadBracket();
+}
+
+// Recent seasons offered in the bracket's season picker (current year back 8).
+function bracketSeasonOptions() {
+  const y = new Date().getFullYear();
+  return Array.from({ length: 9 }, (_, i) => y - i);
 }
 
 function sortStandings(i) {
@@ -484,19 +497,25 @@ async function loadLeaders() {
   const st = state.standings;
   const league = getLeague(st.selectedId);
   if (!league) return;
-  // leaders are season-scoped; reuse the standings season (discover it if unknown)
-  if (!st.season && league.sport !== 'soccer') {
+  // ESPN's no-season ("all-time") leaders form is empty for soccer, so always use
+  // a season there. Other sports keep the Season/All-time choice.
+  const allTime = league.sport === 'soccer' ? false : st.leadersAllTime;
+  // leaders are season-scoped; discover the current season if we don't have one.
+  // (soccer needs this too — without a season it would hit the empty all-time form.)
+  if (!st.season && !allTime) {
     try { const s = await fetchStandings(league); st.season = s.season; if (!st.result) st.result = s; } catch { /* ignore */ }
   }
   st.leadersLoading = !st.leaders;
   if (getSettings().view === 'standings') render();
   try {
-    st.leaders = await fetchLeaders(league, st.season, { allTime: st.leadersAllTime });
-    // Some leagues publish leaders a season behind (e.g. EPL): if the selected
-    // season has none, fall back to the previous season so it's not empty.
-    if (!st.leadersAllTime && st.season && st.leaders && !st.leaders.categories.length) {
-      const alt = await fetchLeaders(league, st.season - 1, { allTime: false }).catch(() => null);
-      if (alt && alt.categories.length) { st.leaders = alt; st.season = st.season - 1; }
+    st.leaders = await fetchLeaders(league, st.season, { allTime });
+    // The current season can be empty (e.g. soccer's not-yet-played season): walk
+    // back a couple seasons until one actually has published leaders.
+    if (!allTime && st.season && st.leaders && !st.leaders.categories.length) {
+      for (let back = 1; back <= 2; back++) {
+        const alt = await fetchLeaders(league, st.season - back, { allTime: false }).catch(() => null); // eslint-disable-line no-await-in-loop
+        if (alt && alt.categories.length) { st.leaders = alt; st.season = st.season - back; break; }
+      }
     }
   } catch (e) { st.leaders = null; st.error = e; }
   st.leadersLoading = false;
@@ -820,8 +839,11 @@ function render() {
       leadersAllTime: st.leadersAllTime,
       bracketNode: st.mode === 'bracket' ? buildBracketView({
         result: state.bracket.result, loading: state.bracket.loading, error: state.bracket.error,
+        seasons: bracketSeasonOptions(),
+        season: state.bracket.season ?? defaultBracketSeason(getLeague(st.selectedId)?.sport || 'basketball'),
+        onSelectSeason: selectBracketSeason,
         onSelectGame: (game) => openGame(game),
-        onRetry: () => { state.bracket.result = null; state.bracket.leagueId = null; loadBracket(); },
+        onRetry: () => { state.bracket.result = null; loadBracket(); },
       }) : null,
       calendarNode: st.mode === 'calendar' ? buildCalendarView({
         monthDate: state.calendar.monthDate, games: state.calendar.games, loading: state.calendar.loading,

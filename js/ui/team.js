@@ -60,9 +60,10 @@ function advancedPanel(adv) {
   }
   return el('div', { class: 'adv-wrap' }, [
     el('h3', { class: 'detail-section' }, ['Advanced stats']),
-    el('div', { class: 'adv-grid' }, adv.stats.map((s) => el('div', { class: 'adv-cell' }, [
-      el('span', { class: 'adv-val' }, [s.value]),
+    el('div', { class: 'adv-grid' }, adv.stats.map((s) => el('div', { class: 'adv-cell', title: s.desc || s.label }, [
       el('span', { class: 'adv-label' }, [s.label]),
+      el('span', { class: 'adv-val' }, [s.value]),
+      s.desc ? el('span', { class: 'adv-desc' }, [s.desc]) : null,
     ]))),
     adv.note ? el('p', { class: 'muted small adv-note' }, [adv.note]) : null,
   ]);

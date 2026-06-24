@@ -61,14 +61,16 @@ function modeToggle(mode, onSetMode) {
   return el('div', { class: 'seg-toggle' }, [mk('teams', 'Teams'), mk('leaders', 'Leaders'), mk('bracket', 'Bracket'), mk('calendar', 'Calendar')]);
 }
 
-function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry) {
+function leadersBody(leaders, loading, allTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry, allowAllTime = true) {
   const wrap = el('div', {});
-  // Season vs All-time toggle
-  const mk = (id, label, on) => el('button', { class: 'seg' + (on ? ' active' : ''), onclick: () => onSetAllTime(id === 'all') }, [label]);
-  wrap.appendChild(el('div', { class: 'leaders-scope' }, [
-    el('span', { class: 'small muted' }, ['Stats']),
-    el('div', { class: 'seg-toggle' }, [mk('season', 'Season', !allTime), mk('all', 'All-time', allTime)]),
-  ]));
+  // Season vs All-time toggle (hidden for soccer — ESPN has no all-time soccer leaders).
+  if (allowAllTime) {
+    const mk = (id, label, on) => el('button', { class: 'seg' + (on ? ' active' : ''), onclick: () => onSetAllTime(id === 'all') }, [label]);
+    wrap.appendChild(el('div', { class: 'leaders-scope' }, [
+      el('span', { class: 'small muted' }, ['Stats']),
+      el('div', { class: 'seg-toggle' }, [mk('season', 'Season', !allTime), mk('all', 'All-time', allTime)]),
+    ]));
+  }
 
   if (loading) { wrap.appendChild(skeletonView(1)); return wrap; }
   if (!leaders) { wrap.appendChild(errorState('Couldn’t load leaders', 'Stat leaders were unavailable for this league/season.', { onRetry })); return wrap; }
@@ -137,7 +139,9 @@ export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope 
 
   // ---- leaders mode ----
   if (mode === 'leaders') {
-    wrap.appendChild(leadersBody(leaders, leadersLoading, leadersAllTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry));
+    const selLeague = leagues.find((l) => l.id === selectedId);
+    const allowAllTime = (selLeague?.sport || leaders?.league?.sport) !== 'soccer';
+    wrap.appendChild(leadersBody(leaders, leadersLoading, leadersAllTime, onSelectPlayer, onSetAllTime, onExpandCategory, onRetry, allowAllTime));
     return wrap;
   }
 
