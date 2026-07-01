@@ -158,6 +158,15 @@ export const LEAGUES = [
   { id: 'uefa.champions', name: 'Champions League', short: 'UCL', sport: 'soccer', league: 'uefa.champions',
     group: 'Soccer', hasDraws: true, intl: false, tsdb: 'UEFA Champions League', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png' },
 
+  // ---- Croatian HNL — NOT on ESPN, so this league is powered by TheSportsDB
+  // (source:'tsdb'). Schedule + season table + results; live in-game scores and
+  // team/game drill-downs aren't available for it. Set a personal TheSportsDB key
+  // in Settings for the full table/schedule (the public test key is throttled). ----
+  { id: 'cro.1', name: 'Croatian HNL', short: 'HNL', sport: 'soccer', league: 'cro.1',
+    group: 'Soccer', hasDraws: true, intl: false, tsdb: 'Croatian First Football League',
+    logo: 'https://r2.thesportsdb.com/images/media/league/badge/bgo85e1781975278.png',
+    source: 'tsdb', tsdbLeagueId: '4629' },
+
   // ---- International soccer (follow the Croatia national team here) ----
   // A national team keeps the SAME ESPN team id across these competitions, so
   // favoriting "Croatia" in any one of them highlights its games in all of them.

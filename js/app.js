@@ -541,7 +541,7 @@ function isCurrent(type, key, val) { return state.detail.type === type && state.
 
 function openTeam(leagueId, teamId) {
   const league = getLeague(leagueId);
-  if (!league) return;
+  if (!league || league.source === 'tsdb') return; // TheSportsDB leagues have no ESPN team page
   pushDetail({ ...blankDetail(), type: 'team', league, teamId, loading: true });
   fetchTeamDetail(league, teamId)
     .then((r) => { if (isCurrent('team', 'teamId', teamId)) { state.detail.result = r; state.detail.loading = false; render(); loadTeamAdvanced(league, teamId); } })
@@ -566,7 +566,7 @@ function openPlayer(league, athleteId) {
 
 function openGame(game) {
   const league = getLeague(game.leagueId);
-  if (!league) return;
+  if (!league || league.source === 'tsdb' || game.source === 'tsdb') return; // no ESPN game page
   pushDetail({ ...blankDetail(), type: 'game', league, gameId: game.id, loading: true });
   fetchGameSummary(league, game.id)
     .then((r) => { if (isCurrent('game', 'gameId', game.id)) { state.detail.result = r; state.detail.loading = false; render(); scheduleGameRefresh(); } })
@@ -632,13 +632,23 @@ async function loadOneMyTeam(fav) {
   const league = getLeague(fav.leagueId);
   if (!league) { state.myteams.byKey.set(fav.favKey, { error: true, loading: false }); return; }
   try {
-    const d = await fetchTeamDetail(league, fav.teamId);
+    let team;
+    let schedule;
+    if (league.source === 'tsdb') {
+      // No ESPN team endpoint — synthesize from the league's season schedule.
+      const r = await fetchScoreboard(league);
+      schedule = r.games.filter((g) => g.home.teamId === fav.teamId || g.away.teamId === fav.teamId);
+      team = { id: fav.teamId, name: fav.displayName, abbr: fav.abbr, logo: fav.logo, color: '', leagueId: fav.leagueId, sport: 'soccer', favKey: fav.favKey, record: '', standingSummary: '' };
+    } else {
+      const d = await fetchTeamDetail(league, fav.teamId);
+      team = d.team; schedule = d.schedule;
+    }
     const now = Date.now();
-    const finals = d.schedule.filter((g) => g.isFinal);
+    const finals = schedule.filter((g) => g.isFinal);
     const lastGame = finals[finals.length - 1] || null;
-    const nextGame = d.schedule.find((g) => g.isLive || (!g.isFinal && Number.isFinite(g.startMs) && g.startMs >= now - 3 * 3600 * 1000)) || null;
+    const nextGame = schedule.find((g) => g.isLive || (!g.isFinal && Number.isFinite(g.startMs) && g.startMs >= now - 3 * 3600 * 1000)) || null;
     const recentForm = finals.slice(-5); // last 5 finals for the form pills
-    state.myteams.byKey.set(fav.favKey, { result: { team: d.team, lastGame, nextGame, recentForm, schedule: d.schedule }, loading: false });
+    state.myteams.byKey.set(fav.favKey, { result: { team, lastGame, nextGame, recentForm, schedule }, loading: false });
   } catch (e) {
     state.myteams.byKey.set(fav.favKey, { error: true, loading: false });
   }
@@ -1166,6 +1176,22 @@ function openSettings() {
     el('label', { class: 'field' }, [el('span', { class: 'small muted' }, ['Location']), regionSelect]),
   ]);
 
+  // Croatian HNL / TheSportsDB key
+  const tsdbInput = el('input', { type: 'text', id: 'cfg-tsdb', placeholder: 'e.g. 1234567', value: s.tsdbKey || '' });
+  const tsdbBlock = el('div', { class: 'setting-group' }, [
+    el('h3', {}, ['Croatian HNL (TheSportsDB)']),
+    el('p', { class: 'muted small' }, ['ESPN doesn’t carry the Croatian HNL, so it’s powered by TheSportsDB. It works out of the box on the free key. Heads up: TheSportsDB’s free tier caps the table at ~5 teams and the schedule at ~15 games, and has no live in-game scores — that’s their limit. A paid TheSportsDB key unlocks the full table/schedule + live; paste it below to use it. (Team/game drill-downs aren’t available for this league.)']),
+    el('label', { class: 'field' }, [el('span', { class: 'small muted' }, ['TheSportsDB API key (optional — paid tier)']), tsdbInput]),
+    el('button', {
+      class: 'btn', onclick: async () => {
+        await updateSettings({ tsdbKey: tsdbInput.value.trim() });
+        clearResponseCache();
+        render();
+        refreshCurrentView({ showSkeleton: true });
+      },
+    }, ['Save & reload']),
+  ]);
+
   // Data / cache
   const dataBlock = el('div', { class: 'setting-group' }, [
     el('h3', {}, ['Data']),
@@ -1184,6 +1210,7 @@ function openSettings() {
   drawer.appendChild(leagueGroups);
   drawer.appendChild(favBlock);
   drawer.appendChild(regionBlock);
+  drawer.appendChild(tsdbBlock);
   drawer.appendChild(proxyBlock);
   drawer.appendChild(dataBlock);
 

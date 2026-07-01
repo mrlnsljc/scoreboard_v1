@@ -17,6 +17,7 @@ import { getJSON } from './http.js';
 import { getRegion } from '../config.js';
 import { getSettings } from '../store/settings.js';
 import { teamFavKey } from '../store/favorites.js';
+import { fetchTsdbStandings } from './tsdb-league.js';
 
 const STANDINGS = 'https://site.api.espn.com/apis/v2/sports';
 
@@ -52,6 +53,8 @@ function collectGroups(node, out) {
 }
 
 export async function fetchStandings(league, season) {
+  // Non-ESPN leagues (e.g. Croatian HNL) route to their own adapter.
+  if (league.source === 'tsdb') return fetchTsdbStandings(league, season);
   const { region, lang } = getRegion(getSettings().regionCode);
   const params = new URLSearchParams({ region, lang });
   if (season) params.set('season', String(season));

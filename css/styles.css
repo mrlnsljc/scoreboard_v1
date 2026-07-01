@@ -700,6 +700,7 @@ html[data-theme="dark"] .date-input::-webkit-calendar-picker-indicator { filter:
 .cal-more { font-size: 10px; padding-left: 4px; }
 .cal-empty { text-align: center; margin-top: 12px; }
 .sched-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.team-name-plain { font-weight: 650; }
 @media (max-width: 680px) {
   .cal-grid { gap: 3px; }
   .cal-cell { min-height: 58px; padding: 3px; border-radius: 6px; }

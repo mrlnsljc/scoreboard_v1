@@ -76,11 +76,14 @@ export function gameCard(game, { onToggleTeam, onOpenGame, showLeague = false, p
   const accentSide = isTeamFavorite(game.home.favKey) ? game.home
     : isTeamFavorite(game.away.favKey) ? game.away : game.home;
   const accent = accentSide.color || accentSide.altColor || '';
+  // TheSportsDB-powered leagues (HNL) have no ESPN game page, so those cards
+  // aren't clickable.
+  const openable = onOpenGame && game.source !== 'tsdb';
   const card = el('div', {
-    class: 'card game-card' + (game.isLive ? ' is-live' : '') + (followed ? ' pinned' : '') + (onOpenGame ? ' clickable' : '') + (accent ? ' accented' : ''),
+    class: 'card game-card' + (game.isLive ? ' is-live' : '') + (followed ? ' pinned' : '') + (openable ? ' clickable' : '') + (accent ? ' accented' : ''),
     dataset: { gameId: game.id, leagueId: game.leagueId },
     style: accent ? { '--team-accent': accent } : null,
-    onclick: onOpenGame ? () => onOpenGame(game) : undefined,
+    onclick: openable ? () => onOpenGame(game) : undefined,
   }, [
     el('div', { class: 'card-top' }, [
       showLeague ? el('span', { class: 'league-tag' }, [game.league.short]) : null,

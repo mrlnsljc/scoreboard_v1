@@ -56,6 +56,8 @@ async function resolveAthletes(refs) {
 }
 
 export async function fetchLeaders(league, season, { allTime = false } = {}) {
+  // Non-ESPN leagues (Croatian HNL) have no leaders feed.
+  if (league.source === 'tsdb') return { league, categories: [], season, allTime };
   // Soccer uses season-type 1; the other sports use 2. Season-scoped = that
   // season's leaders; the no-season form returns all-time/career totals.
   const type = league.sport === 'soccer' ? 1 : 2;

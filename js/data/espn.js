@@ -44,6 +44,7 @@ import { getJSON } from './http.js';
 import { teamFavKey } from '../store/favorites.js';
 import { APP_CONFIG, getRegion } from '../config.js';
 import { getSettings } from '../store/settings.js';
+import { fetchTsdbScoreboard } from './tsdb-league.js';
 
 const SITE_API = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -193,6 +194,8 @@ export function normalizeScoreboard(data, league) {
 // Returns { league, games, fetchedAt, stale, source, error? }. Never throws for
 // "no games"; only throws if there's no data AND no cache to fall back to.
 export async function fetchScoreboard(league, datesParam, { ttlMs } = {}) {
+  // Non-ESPN leagues (e.g. Croatian HNL) route to their own adapter.
+  if (league.source === 'tsdb') return fetchTsdbScoreboard(league, datesParam);
   const url = scoreboardUrl(league, datesParam);
   // region in the key so US/CA/etc. payloads don't collide in the cache.
   const cacheKey = `scoreboard:${league.id}:${getSettings().regionCode}:${datesParam || 'now'}`;

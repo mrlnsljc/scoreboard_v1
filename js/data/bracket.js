@@ -128,6 +128,8 @@ function buildSeriesRounds(games) {
 }
 
 export async function fetchBracket(league, year) {
+  // Non-ESPN leagues (Croatian HNL) have no bracket feed.
+  if (league.source === 'tsdb') return { league, season: year || defaultBracketSeason(league.sport), rounds: [], empty: true };
   const { region, lang } = getRegion(getSettings().regionCode);
   const yr = year || defaultBracketSeason(league.sport);
   const ranges = postseasonRanges(league.sport, yr);

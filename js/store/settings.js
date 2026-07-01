@@ -19,6 +19,7 @@ const DEFAULTS = {
   regionCode: APP_CONFIG.defaultRegion, // broadcast/location region (see REGIONS)
   useProxy: APP_CONFIG.useProxy,     // runtime override of the config flag
   proxyBase: APP_CONFIG.proxyBase,   // runtime override of the proxy URL
+  tsdbKey: '',            // personal TheSportsDB API key (for the Croatian HNL feed)
   seeded: false,          // have we applied first-run default follows yet?
 };
 

@@ -21,11 +21,11 @@ function teamCell(row, onSelectTeam) {
   const logo = row.logo
     ? (() => { const i = el('img', { class: 'logo sm', src: row.logo, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }); i.addEventListener('error', () => i.replaceWith(el('span', { class: 'logo sm mono' }, [(row.abbr || row.name).slice(0, 2)]))); return i; })()
     : el('span', { class: 'logo sm mono' }, [(row.abbr || row.name).slice(0, 2)]);
-  return el('td', { class: 'c-team' }, [
-    logo,
-    el('button', { class: 'link-team', onclick: () => onSelectTeam(row.teamId), title: `View ${row.name}` }, [row.name]),
-    clinchBadge(row.clinch),
-  ]);
+  // TheSportsDB leagues (HNL) have no ESPN team page → plain, non-clickable name.
+  const nameEl = row.noTeamPage
+    ? el('span', { class: 'team-name-plain' }, [row.name])
+    : el('button', { class: 'link-team', onclick: () => onSelectTeam(row.teamId), title: `View ${row.name}` }, [row.name]);
+  return el('td', { class: 'c-team' }, [logo, nameEl, clinchBadge(row.clinch)]);
 }
 
 function groupTable(group, columns, onSelectTeam, sortIndex, sortDir, onSort) {
@@ -156,8 +156,11 @@ export function buildStandingsView({ leagues, selectedId, mode = 'teams', scope 
   // Grouped (by conference) vs Overall (all teams in one table) — only when
   // the league actually has more than one group.
   const multiGroup = result.groups.length > 1;
+  const noDrill = leagues.find((l) => l.id === selectedId)?.source === 'tsdb';
   const controls = el('div', { class: 'std-controls' }, [
-    el('p', { class: 'muted small tap-hint' }, ['Tap a team for its schedule/roster, or a column header to sort.']),
+    el('p', { class: 'muted small tap-hint' }, [noDrill
+      ? 'Tap a column header to sort. See the season’s fixtures & results under Calendar.'
+      : 'Tap a team for its schedule/roster, or a column header to sort.']),
   ]);
   if (multiGroup) {
     const mk = (id, label) => el('button', { class: 'seg' + (scope === id ? ' active' : ''), onclick: () => onSetScope(id) }, [label]);

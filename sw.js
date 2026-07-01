@@ -12,7 +12,7 @@
    Bump CACHE_VERSION to force clients onto new assets.
    ============================================================================= */
 
-const CACHE_VERSION = 'v14';
+const CACHE_VERSION = 'v16';
 const SHELL_CACHE = `sb-shell-${CACHE_VERSION}`;
 const API_CACHE = `sb-api-${CACHE_VERSION}`;
 const IMG_CACHE = `sb-img-${CACHE_VERSION}`;
@@ -39,6 +39,7 @@ const SHELL_ASSETS = [
   './js/data/leaders.js',
   './js/data/racing.js',
   './js/data/bracket.js',
+  './js/data/tsdb-league.js',
   './js/data/playersearch.js',
   './js/data/thesportsdb.js',
   './js/data/logos.js',
